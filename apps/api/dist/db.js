@@ -13,7 +13,14 @@ let client;
 let db;
 export async function connectDb() {
     const uri = process.env.MONGODB_URI || "mongodb://localhost:27017/polyblocks";
-    client = new MongoClient(uri);
+    client = new MongoClient(uri, {
+        // Node.js 24+ uses OpenSSL 3.x with stricter TLS defaults.
+        // MongoDB Atlas free-tier may need a wider min TLS version.
+        tls: uri.startsWith("mongodb+srv"),
+        // 30-second timeout so Heroku doesn't die waiting
+        serverSelectionTimeoutMS: 30_000,
+        connectTimeoutMS: 30_000,
+    });
     await client.connect();
     db = client.db();
     // Create indexes (idempotent — safe to call every startup)
