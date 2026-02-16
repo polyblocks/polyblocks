@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown } from "lucide-react";
+import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users } from "lucide-react";
 import { useAuthStore } from "../stores/authStore";
 
 export default function Layout() {
@@ -48,6 +48,13 @@ export default function Layout() {
           title="Templates"
         >
           <BookTemplate size={20} />
+        </NavLink>
+        <NavLink
+          to="/backtesting"
+          className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}
+          title="Copy Trading"
+        >
+          <Users size={20} />
         </NavLink>
         <div className="nav-spacer" />
 

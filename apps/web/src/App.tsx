@@ -8,6 +8,7 @@ import LibraryPage from "./pages/LibraryPage";
 import SettingsPage from "./pages/SettingsPage";
 import LandingPage from "./pages/LandingPage";
 import PricingPage from "./pages/PricingPage";
+import BacktestingPage from "./pages/BacktestingPage";
 import AuthCallbackPage from "./pages/AuthCallbackPage";
 import { useEffect } from "react";
 import { useAuthStore } from "./stores/authStore";
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/library" element={<LibraryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/backtesting" element={<BacktestingPage />} />
         </Route>
       </Route>
     </Routes>

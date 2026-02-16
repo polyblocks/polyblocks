@@ -160,23 +160,6 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     icon: "book-open",
   },
 
-  [BlockType.PriceHistory]: {
-    type: BlockType.PriceHistory,
-    category: NodeCategory.Data,
-    label: "Price History",
-    description: "Get historical OHLC price data",
-    inputs: [
-      { id: "market", label: "Market", type: PortType.Market },
-      { id: "trigger", label: "Trigger", type: PortType.Signal },
-    ],
-    outputs: [
-      { id: "prices", label: "History", type: PortType.Any },
-    ],
-    defaultConfig: { interval: "1h", fidelity: 60 },
-    color: COLORS[NodeCategory.Data],
-    icon: "line-chart",
-  },
-
   [BlockType.MultiMarketCompare]: {
     type: BlockType.MultiMarketCompare,
     category: NodeCategory.Data,
@@ -197,19 +180,72 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     icon: "columns",
   },
 
+  [BlockType.UserActivity]: {
+    type: BlockType.UserActivity,
+    category: NodeCategory.Data,
+    label: "User Activity",
+    description: "Fetch a user's latest Polymarket trade — for copy-trading or monitoring",
+    inputs: [
+      { id: "trigger", label: "Trigger", type: PortType.Signal },
+    ],
+    outputs: [
+      { id: "market", label: "Market", type: PortType.Market },
+      { id: "side", label: "Side", type: PortType.String },
+      { id: "size", label: "Size $", type: PortType.Number },
+      { id: "price", label: "Price", type: PortType.Number },
+      { id: "outcome", label: "Outcome", type: PortType.String },
+      { id: "title", label: "Title", type: PortType.String },
+      { id: "signal", label: "Signal", type: PortType.Signal },
+    ],
+    defaultConfig: {
+      targetAddress: "",
+      ignoreFirstFetch: false,
+      ignoreDuplicates: true,
+    },
+    color: COLORS[NodeCategory.Data],
+    icon: "users",
+  },
+
+  [BlockType.CustomApiData]: {
+    type: BlockType.CustomApiData,
+    category: NodeCategory.Data,
+    label: "Custom API",
+    description: "Fetch data from any external API (weather, news, crypto prices, etc.) and extract values using JSON path",
+    inputs: [
+      { id: "trigger", label: "Trigger", type: PortType.Signal },
+    ],
+    outputs: [
+      { id: "value", label: "Value", type: PortType.Number },
+      { id: "text", label: "Text", type: PortType.String },
+      { id: "json", label: "Raw JSON", type: PortType.String },
+      { id: "signal", label: "Signal", type: PortType.Signal },
+    ],
+    defaultConfig: {
+      url: "",
+      method: "GET",
+      headers: "{}",
+      body: "",
+      jsonPath: "",
+    },
+    color: COLORS[NodeCategory.Data],
+    icon: "globe",
+  },
+
   // ── Logic ─────────────────────────────────────────────────────────────
 
   [BlockType.AndGate]: {
     type: BlockType.AndGate,
     category: NodeCategory.Logic,
     label: "AND",
-    description: "Outputs true only if ALL inputs are true",
+    description: "Outputs true only if ALL inputs are true. Passes signal through when result is true.",
     inputs: [
       { id: "a", label: "A", type: PortType.Boolean },
       { id: "b", label: "B", type: PortType.Boolean },
+      { id: "signal", label: "Signal In", type: PortType.Signal },
     ],
     outputs: [
       { id: "result", label: "Result", type: PortType.Boolean },
+      { id: "signal", label: "Signal Out", type: PortType.Signal },
     ],
     defaultConfig: {},
     color: COLORS[NodeCategory.Logic],
@@ -220,13 +256,15 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     type: BlockType.OrGate,
     category: NodeCategory.Logic,
     label: "OR",
-    description: "Outputs true if ANY input is true",
+    description: "Outputs true if ANY input is true. Passes signal through when result is true.",
     inputs: [
       { id: "a", label: "A", type: PortType.Boolean },
       { id: "b", label: "B", type: PortType.Boolean },
+      { id: "signal", label: "Signal In", type: PortType.Signal },
     ],
     outputs: [
       { id: "result", label: "Result", type: PortType.Boolean },
+      { id: "signal", label: "Signal Out", type: PortType.Signal },
     ],
     defaultConfig: {},
     color: COLORS[NodeCategory.Logic],
@@ -305,7 +343,7 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     type: BlockType.MathOp,
     category: NodeCategory.Logic,
     label: "Math",
-    description: "Perform arithmetic on two numbers",
+    description: "Perform arithmetic on multiple numbers",
     inputs: [
       { id: "a", label: "A", type: PortType.Number },
       { id: "b", label: "B", type: PortType.Number },
@@ -313,7 +351,7 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     outputs: [
       { id: "result", label: "Result", type: PortType.Number },
     ],
-    defaultConfig: { operator: "+" },
+    defaultConfig: { operator: "+", inputCount: 2 },
     color: COLORS[NodeCategory.Logic],
     icon: "calculator",
   },
@@ -334,6 +372,62 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     defaultConfig: { bankroll: 1000, maxFraction: 0.25, mode: "kelly" },
     color: COLORS[NodeCategory.Logic],
     icon: "percent",
+  },
+
+  [BlockType.ProbabilityCalc]: {
+    type: BlockType.ProbabilityCalc,
+    category: NodeCategory.Logic,
+    label: "Probability",
+    description: "Convert a market price to implied probability and complement",
+    inputs: [
+      { id: "price", label: "Price", type: PortType.Number },
+    ],
+    outputs: [
+      { id: "impliedProb", label: "Implied %", type: PortType.Number },
+      { id: "complement", label: "Complement %", type: PortType.Number },
+      { id: "odds", label: "Odds", type: PortType.Number },
+    ],
+    defaultConfig: { vigAdjust: false, vig: 0.02 },
+    color: COLORS[NodeCategory.Logic],
+    icon: "pie-chart",
+  },
+
+  [BlockType.ExpectedValue]: {
+    type: BlockType.ExpectedValue,
+    category: NodeCategory.Logic,
+    label: "Expected Value",
+    description: "Calculate EV from your estimated probability and market price — positive EV = profitable bet",
+    inputs: [
+      { id: "estimatedProb", label: "Est. Prob", type: PortType.Number },
+      { id: "marketPrice", label: "Mkt Price", type: PortType.Number },
+    ],
+    outputs: [
+      { id: "ev", label: "EV", type: PortType.Number },
+      { id: "evPercent", label: "EV %", type: PortType.Number },
+      { id: "signal", label: "Signal", type: PortType.Signal },
+    ],
+    defaultConfig: { minEv: 0 },
+    color: COLORS[NodeCategory.Logic],
+    icon: "trending-up",
+  },
+
+  [BlockType.EdgeCalc]: {
+    type: BlockType.EdgeCalc,
+    category: NodeCategory.Logic,
+    label: "Edge Calculator",
+    description: "Calculate your edge = estimated true probability − market implied probability",
+    inputs: [
+      { id: "estimatedProb", label: "Est. Prob", type: PortType.Number },
+      { id: "marketPrice", label: "Mkt Price", type: PortType.Number },
+    ],
+    outputs: [
+      { id: "edge", label: "Edge", type: PortType.Number },
+      { id: "edgePercent", label: "Edge %", type: PortType.Number },
+      { id: "signal", label: "Signal", type: PortType.Signal },
+    ],
+    defaultConfig: { minEdge: 0.02 },
+    color: COLORS[NodeCategory.Logic],
+    icon: "target",
   },
 
   // ── Risk ──────────────────────────────────────────────────────────────
@@ -390,18 +484,43 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     type: BlockType.PlaceOrder,
     category: NodeCategory.Action,
     label: "Place Order",
-    description: "Place a limit or marketable-limit order",
+    description: "Place a limit order on a market",
     inputs: [
       { id: "market", label: "Market", type: PortType.Market },
       { id: "signal", label: "Signal", type: PortType.Signal },
+      { id: "sizeUsd", label: "Size $", type: PortType.Number },
+      { id: "outcome", label: "Outcome", type: PortType.String },
+      { id: "side", label: "Side", type: PortType.String },
     ],
     outputs: [
-      { id: "order", label: "Order", type: PortType.Order },
+      { id: "orderId", label: "Order ID", type: PortType.String },
       { id: "filled", label: "Filled", type: PortType.Signal },
     ],
-    defaultConfig: { side: "BUY", outcome: "YES", orderType: "GTC", sizeUsd: 10 },
+    defaultConfig: { side: "BUY", outcome: "YES", sizeUsd: 10, preventDuplicate: false },
     color: COLORS[NodeCategory.Action],
     icon: "send",
+  },
+
+  [BlockType.LimitOrder]: {
+    type: BlockType.LimitOrder,
+    category: NodeCategory.Action,
+    label: "Limit Order",
+    description: "Place a limit order at a specific price — only fills when the market reaches your price",
+    inputs: [
+      { id: "market", label: "Market", type: PortType.Market },
+      { id: "signal", label: "Signal", type: PortType.Signal },
+      { id: "sizeUsd", label: "Size $", type: PortType.Number },
+      { id: "limitPrice", label: "Limit Price", type: PortType.Number },
+      { id: "outcome", label: "Outcome", type: PortType.String },
+      { id: "side", label: "Side", type: PortType.String },
+    ],
+    outputs: [
+      { id: "orderId", label: "Order ID", type: PortType.String },
+      { id: "placed", label: "Placed", type: PortType.Signal },
+    ],
+    defaultConfig: { side: "BUY", outcome: "YES", sizeUsd: 10, limitPrice: 0.5, preventDuplicate: false },
+    color: COLORS[NodeCategory.Action],
+    icon: "bookmark",
   },
 
   [BlockType.CancelOrder]: {
@@ -410,7 +529,7 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     label: "Cancel Order",
     description: "Cancel a specific open order",
     inputs: [
-      { id: "order", label: "Order", type: PortType.Order },
+      { id: "orderId", label: "Order ID", type: PortType.String },
       { id: "signal", label: "Signal", type: PortType.Signal },
     ],
     outputs: [
@@ -442,7 +561,7 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     type: BlockType.Notification,
     category: NodeCategory.Action,
     label: "Notify",
-    description: "Send a notification (log, webhook, email)",
+    description: "Send a notification via log, email, or Telegram",
     inputs: [
       { id: "signal", label: "Signal", type: PortType.Signal },
       { id: "message", label: "Message", type: PortType.String },

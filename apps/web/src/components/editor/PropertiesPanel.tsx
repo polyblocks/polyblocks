@@ -9,16 +9,18 @@ import {
 } from "@polyblocks/types";
 import { Input, Select, Button } from "@polyblocks/ui";
 import { useEditorStore } from "../../stores/editorStore";
-import { X, Trash2, Settings, BookOpen } from "lucide-react";
+import { X, Trash2, Settings, BookOpen, Sparkles } from "lucide-react";
 import MarketPicker from "./MarketPicker";
 import TutorialsPanel from "./TutorialsPanel";
+import AiBuilderPanel from "./AiBuilderPanel";
 
-type RightTab = "properties" | "tutorials";
+type RightTab = "properties" | "tutorials" | "ai";
 
 export default function PropertiesPanel() {
   const [activeTab, setActiveTab] = useState<RightTab>("properties");
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
   const nodes = useEditorStore((s) => s.nodes);
+  const edges = useEditorStore((s) => s.edges);
   const updateNodeConfig = useEditorStore((s) => s.updateNodeConfig);
   const updateNodeLabel = useEditorStore((s) => s.updateNodeLabel);
   const removeNode = useEditorStore((s) => s.removeNode);
@@ -42,14 +44,24 @@ export default function PropertiesPanel() {
           <BookOpen size={14} />
           Tutorials
         </button>
+        <button
+          className={`right-panel-tab ai-tab ${activeTab === "ai" ? "active" : ""}`}
+          onClick={() => setActiveTab("ai")}
+        >
+          <Sparkles size={14} />
+          AI
+        </button>
       </div>
 
       {activeTab === "tutorials" ? (
         <TutorialsPanel />
+      ) : activeTab === "ai" ? (
+        <AiBuilderPanel />
       ) : (
         <PropertiesContent
           selectedNodeId={selectedNodeId}
           nodes={nodes}
+          edges={edges}
           updateNodeConfig={updateNodeConfig}
           updateNodeLabel={updateNodeLabel}
           removeNode={removeNode}
@@ -63,6 +75,7 @@ export default function PropertiesPanel() {
 function PropertiesContent({
   selectedNodeId,
   nodes,
+  edges,
   updateNodeConfig,
   updateNodeLabel,
   removeNode,
@@ -70,6 +83,7 @@ function PropertiesContent({
 }: {
   selectedNodeId: string | null;
   nodes: ReturnType<typeof useEditorStore.getState>["nodes"];
+  edges: ReturnType<typeof useEditorStore.getState>["edges"];
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
   updateNodeLabel: (id: string, label: string) => void;
   removeNode: (id: string) => void;
@@ -101,6 +115,15 @@ function PropertiesContent({
   if (!def) return null;
 
   const config = node.data.config as Record<string, unknown>;
+
+  // Check if a specific input port has a connected wire
+  const isPortWired = (portId: string) =>
+    edges.some((e) => e.target === selectedNodeId && e.targetHandle === portId);
+
+  const sizeWired = isPortWired("sizeUsd");
+  const outcomeWired = isPortWired("outcome");
+  const sideWired = isPortWired("side");
+  const limitPriceWired = isPortWired("limitPrice");
 
   const handleConfigChange = (key: string, value: unknown) => {
     updateNodeConfig(selectedNodeId, { [key]: value });
@@ -216,33 +239,26 @@ function PropertiesContent({
               <Select
                 value={String(config.side)}
                 onChange={(e) => handleConfigChange("side", e.target.value)}
+                disabled={sideWired}
+                style={sideWired ? { opacity: 0.4, pointerEvents: "none" } : {}}
               >
                 <option value="BUY">Buy</option>
                 <option value="SELL">Sell</option>
               </Select>
+              {sideWired && <p style={{ color: "var(--pb-accent)", fontSize: 11, margin: "4px 0 0 0" }}>⚡ Controlled by connected wire</p>}
             </div>
             <div className="property-group">
               <label>Outcome</label>
               <Select
                 value={String(config.outcome)}
                 onChange={(e) => handleConfigChange("outcome", e.target.value)}
+                disabled={outcomeWired}
+                style={outcomeWired ? { opacity: 0.4, pointerEvents: "none" } : {}}
               >
                 <option value="YES">YES</option>
                 <option value="NO">NO</option>
               </Select>
-            </div>
-            <div className="property-group">
-              <label>Order Type</label>
-              <Select
-                value={String(config.orderType)}
-                onChange={(e) =>
-                  handleConfigChange("orderType", e.target.value)
-                }
-              >
-                <option value="GTC">GTC (Limit)</option>
-                <option value="FOK">FOK (Market)</option>
-                <option value="FAK">FAK (Partial Fill)</option>
-              </Select>
+              {outcomeWired && <p style={{ color: "var(--pb-accent)", fontSize: 11, margin: "4px 0 0 0" }}>⚡ Controlled by connected wire</p>}
             </div>
             <div className="property-group">
               <label>Size (USD)</label>
@@ -253,7 +269,102 @@ function PropertiesContent({
                 onChange={(e) =>
                   handleConfigChange("sizeUsd", Number(e.target.value))
                 }
+                disabled={sizeWired}
+                style={sizeWired ? { opacity: 0.4, pointerEvents: "none" } : {}}
               />
+              {sizeWired && <p style={{ color: "var(--pb-accent)", fontSize: 11, margin: "4px 0 0 0" }}>⚡ Size controlled by connected wire</p>}
+            </div>
+            <div className="property-group">
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.preventDuplicate)}
+                  onChange={(e) => handleConfigChange("preventDuplicate", e.target.checked)}
+                  style={{ accentColor: "var(--pb-accent)" }}
+                />
+                Prevent duplicate trades
+              </label>
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 11, margin: "4px 0 0 0" }}>
+                Skip if the same market/side/outcome was already traded this run
+              </p>
+            </div>
+          </>
+        )}
+
+        {blockType === BlockType.LimitOrder && (
+          <>
+            <div className="property-group">
+              <label>Side</label>
+              <Select
+                value={String(config.side)}
+                onChange={(e) => handleConfigChange("side", e.target.value)}
+                disabled={sideWired}
+                style={sideWired ? { opacity: 0.4, pointerEvents: "none" } : {}}
+              >
+                <option value="BUY">Buy</option>
+                <option value="SELL">Sell</option>
+              </Select>
+              {sideWired && <p style={{ color: "var(--pb-accent)", fontSize: 11, margin: "4px 0 0 0" }}>⚡ Controlled by connected wire</p>}
+            </div>
+            <div className="property-group">
+              <label>Outcome</label>
+              <Select
+                value={String(config.outcome)}
+                onChange={(e) => handleConfigChange("outcome", e.target.value)}
+                disabled={outcomeWired}
+                style={outcomeWired ? { opacity: 0.4, pointerEvents: "none" } : {}}
+              >
+                <option value="YES">YES</option>
+                <option value="NO">NO</option>
+              </Select>
+              {outcomeWired && <p style={{ color: "var(--pb-accent)", fontSize: 11, margin: "4px 0 0 0" }}>⚡ Controlled by connected wire</p>}
+            </div>
+            <div className="property-group">
+              <label>Size (USD)</label>
+              <Input
+                type="number"
+                min={1}
+                value={Number(config.sizeUsd)}
+                onChange={(e) =>
+                  handleConfigChange("sizeUsd", Number(e.target.value))
+                }
+                disabled={sizeWired}
+                style={sizeWired ? { opacity: 0.4, pointerEvents: "none" } : {}}
+              />
+              {sizeWired && <p style={{ color: "var(--pb-accent)", fontSize: 11, margin: "4px 0 0 0" }}>⚡ Size controlled by connected wire</p>}
+            </div>
+            <div className="property-group">
+              <label>Limit Price</label>
+              <Input
+                type="number"
+                min={0.01}
+                max={0.99}
+                step={0.01}
+                value={Number(config.limitPrice)}
+                onChange={(e) =>
+                  handleConfigChange("limitPrice", Number(e.target.value))
+                }
+                disabled={limitPriceWired}
+                style={limitPriceWired ? { opacity: 0.4, pointerEvents: "none" } : {}}
+              />
+              {limitPriceWired
+                ? <p style={{ color: "var(--pb-accent)", fontSize: 11, margin: "4px 0 0 0" }}>⚡ Limit price controlled by connected wire</p>
+                : <p style={{ color: "var(--pb-text-muted)", fontSize: 11, margin: "4px 0 0 0" }}>Order only fills when market price reaches this level</p>
+              }
+            </div>
+            <div className="property-group">
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.preventDuplicate)}
+                  onChange={(e) => handleConfigChange("preventDuplicate", e.target.checked)}
+                  style={{ accentColor: "var(--pb-accent)" }}
+                />
+                Prevent duplicate trades
+              </label>
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 11, margin: "4px 0 0 0" }}>
+                Skip if the same market/side/outcome was already traded this run
+              </p>
             </div>
           </>
         )}
@@ -301,18 +412,42 @@ function PropertiesContent({
         )}
 
         {blockType === BlockType.MathOp && (
-          <div className="property-group">
-            <label>Operator</label>
-            <Select
-              value={String(config.operator)}
-              onChange={(e) => handleConfigChange("operator", e.target.value)}
-            >
-              <option value="+">+ Add</option>
-              <option value="-">− Subtract</option>
-              <option value="*">× Multiply</option>
-              <option value="/">÷ Divide</option>
-            </Select>
-          </div>
+          <>
+            <div className="property-group">
+              <label>Operator</label>
+              <Select
+                value={String(config.operator)}
+                onChange={(e) => handleConfigChange("operator", e.target.value)}
+              >
+                <option value="+">+ Add</option>
+                <option value="-">− Subtract</option>
+                <option value="*">× Multiply</option>
+                <option value="/">÷ Divide</option>
+              </Select>
+            </div>
+            <div className="property-group">
+              <label>Number of Inputs</label>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <Input
+                  type="number"
+                  min={2}
+                  max={10}
+                  value={Number(config.inputCount || 2)}
+                  onChange={(e) => handleConfigChange("inputCount", Math.max(2, Math.min(10, Number(e.target.value))))}
+                  style={{ width: 70 }}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => handleConfigChange("inputCount", Math.min(10, Number(config.inputCount || 2) + 1))}
+                >
+                  + Add Input
+                </Button>
+              </div>
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 11, margin: "4px 0 0 0" }}>
+                Inputs are labeled a, b, c, d… (up to 10)
+              </p>
+            </div>
+          </>
         )}
 
         {blockType === BlockType.PositionSizer && (
@@ -369,6 +504,179 @@ function PropertiesContent({
           </div>
         )}
 
+        {blockType === BlockType.ProbabilityCalc && (
+          <>
+            <div className="property-group">
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 12, margin: 0 }}>
+                Converts a market price (0–1) to implied probability, complement (1 − prob),
+                and decimal odds.
+              </p>
+            </div>
+            <div className="property-group">
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.vigAdjust)}
+                  onChange={(e) => handleConfigChange("vigAdjust", e.target.checked)}
+                />
+                Remove vig (juice)
+              </label>
+            </div>
+            {Boolean(config.vigAdjust) && (
+              <div className="property-group">
+                <label>Vig / Juice (%)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={0.2}
+                  step={0.005}
+                  value={Number(config.vig)}
+                  onChange={(e) => handleConfigChange("vig", Number(e.target.value))}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {blockType === BlockType.ExpectedValue && (
+          <>
+            <div className="property-group">
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 12, margin: 0 }}>
+                Calculates Expected Value (EV) = your estimated probability − market price.
+                Fires a signal when EV ≥ minimum.
+              </p>
+            </div>
+            <div className="property-group">
+              <label>Min EV to signal</label>
+              <Input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={Number(config.minEv)}
+                onChange={(e) => handleConfigChange("minEv", Number(e.target.value))}
+              />
+            </div>
+          </>
+        )}
+
+        {blockType === BlockType.EdgeCalc && (
+          <>
+            <div className="property-group">
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 12, margin: 0 }}>
+                Edge = estimated true probability − market implied probability.
+                Fires a signal when edge ≥ minimum.
+                Connect the edge output to a Position Sizer for Kelly sizing.
+              </p>
+            </div>
+            <div className="property-group">
+              <label>Min Edge to signal</label>
+              <Input
+                type="number"
+                min={0}
+                max={1}
+                step={0.005}
+                value={Number(config.minEdge)}
+                onChange={(e) => handleConfigChange("minEdge", Number(e.target.value))}
+              />
+            </div>
+          </>
+        )}
+
+        {blockType === BlockType.UserActivity && (
+          <>
+            <div className="property-group">
+              <label>Target Wallet Address</label>
+              <Input
+                value={String(config.targetAddress || "")}
+                placeholder="0x..."
+                onChange={(e) => handleConfigChange("targetAddress", e.target.value)}
+              />
+            </div>
+            <div className="property-group">
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.ignoreFirstFetch)}
+                  onChange={(e) => handleConfigChange("ignoreFirstFetch", e.target.checked)}
+                />
+                Ignore first fetch
+              </label>
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 11, margin: "4px 0 0 0" }}>
+                Skip the first poll so it doesn't trade old positions
+              </p>
+            </div>
+            <div className="property-group">
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.ignoreDuplicates)}
+                  onChange={(e) => handleConfigChange("ignoreDuplicates", e.target.checked)}
+                />
+                Ignore already-fetched trades
+              </label>
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 11, margin: "4px 0 0 0" }}>
+                Dedup — only process trades not seen in previous polls
+              </p>
+            </div>
+          </>
+        )}
+
+        {blockType === BlockType.CustomApiData && (
+          <>
+            <div className="property-group">
+              <label>API URL</label>
+              <Input
+                value={String(config.url || "")}
+                placeholder="https://api.openweathermap.org/data/2.5/weather?q=London&appid=YOUR_KEY"
+                onChange={(e) => handleConfigChange("url", e.target.value)}
+              />
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 11, margin: "4px 0 0 0" }}>
+                Full URL including query parameters and API key
+              </p>
+            </div>
+            <div className="property-group">
+              <label>Method</label>
+              <Select
+                value={String(config.method || "GET")}
+                onChange={(e) => handleConfigChange("method", e.target.value)}
+              >
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+              </Select>
+            </div>
+            <div className="property-group">
+              <label>Headers (JSON)</label>
+              <Input
+                value={String(config.headers || "{}")}
+                placeholder='{"Authorization": "Bearer ..."}'
+                onChange={(e) => handleConfigChange("headers", e.target.value)}
+              />
+            </div>
+            <div className="property-group">
+              <label>JSON Path</label>
+              <Input
+                value={String(config.jsonPath || "")}
+                placeholder="main.temp  or  data.0.price"
+                onChange={(e) => handleConfigChange("jsonPath", e.target.value)}
+              />
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 11, margin: "4px 0 0 0" }}>
+                Dot-separated path to extract a value from the response. E.g. "main.temp" for weather data.
+              </p>
+            </div>
+            {String(config.method || "GET") !== "GET" && (
+              <div className="property-group">
+                <label>Request Body (JSON)</label>
+                <Input
+                  value={String(config.body || "")}
+                  placeholder='{"query": "..."}'
+                  onChange={(e) => handleConfigChange("body", e.target.value)}
+                />
+              </div>
+            )}
+          </>
+        )}
+
         {blockType === BlockType.IfElse && (
           <div className="property-group">
             <p style={{ color: "var(--pb-text-muted)", fontSize: 12, margin: 0 }}>
@@ -407,25 +715,6 @@ function PropertiesContent({
           </div>
         )}
 
-        {blockType === BlockType.PriceHistory && (
-          <>
-            <div className="property-group">
-              <label>Interval</label>
-              <Select
-                value={String(config.interval)}
-                onChange={(e) =>
-                  handleConfigChange("interval", e.target.value)
-                }
-              >
-                <option value="1h">1 Hour</option>
-                <option value="6h">6 Hours</option>
-                <option value="1d">1 Day</option>
-                <option value="1w">1 Week</option>
-              </Select>
-            </div>
-          </>
-        )}
-
         {blockType === BlockType.Notification && (
           <>
             <div className="property-group">
@@ -435,6 +724,8 @@ function PropertiesContent({
                 onChange={(e) => handleConfigChange("channel", e.target.value)}
               >
                 <option value="log">Log only</option>
+                <option value="email">Email</option>
+                <option value="telegram">Telegram</option>
                 <option value="webhook">Webhook</option>
               </Select>
             </div>

@@ -38,8 +38,9 @@ export var BlockType;
     BlockType["PriceData"] = "price_data";
     BlockType["SpreadData"] = "spread_data";
     BlockType["OrderBookData"] = "orderbook_data";
-    BlockType["PriceHistory"] = "price_history";
     BlockType["MultiMarketCompare"] = "multi_market_compare";
+    BlockType["UserActivity"] = "user_activity";
+    BlockType["CustomApiData"] = "custom_api_data";
     // Logic
     BlockType["AndGate"] = "and_gate";
     BlockType["OrGate"] = "or_gate";
@@ -49,12 +50,16 @@ export var BlockType;
     BlockType["Cooldown"] = "cooldown";
     BlockType["MathOp"] = "math_op";
     BlockType["PositionSizer"] = "position_sizer";
+    BlockType["ProbabilityCalc"] = "probability_calc";
+    BlockType["ExpectedValue"] = "expected_value";
+    BlockType["EdgeCalc"] = "edge_calc";
     // Risk
     BlockType["MaxExposure"] = "max_exposure";
     BlockType["DailyLossLimit"] = "daily_loss_limit";
     BlockType["KillSwitch"] = "kill_switch";
     // Actions
     BlockType["PlaceOrder"] = "place_order";
+    BlockType["LimitOrder"] = "limit_order";
     BlockType["CancelOrder"] = "cancel_order";
     BlockType["ClosePosition"] = "close_position";
     BlockType["Notification"] = "notification";

@@ -2,7 +2,7 @@
  * PricingPage — crypto payment page with MetaMask + manual payment for Pro subscription.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 import {
@@ -13,6 +13,10 @@ import {
   Loader2,
   Wallet,
   ExternalLink,
+  Users,
+  Zap,
+  BadgeCheck,
+  Shield,
 } from "lucide-react";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -28,16 +32,35 @@ const USDC_DECIMALS = 6;
 // ERC-20 transfer function selector: transfer(address,uint256)
 const ERC20_TRANSFER_SIG = "0xa9059cbb";
 
-/** Ethereum provider injected by MetaMask / wallets */
-interface EthProvider {
-  isMetaMask?: boolean;
+// ── EIP-6963 + EIP-1193 interfaces ──────────────────────────────────────────
+
+interface EIP1193Provider {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on: (event: string, cb: (...args: unknown[]) => void) => void;
+  on?: (event: string, cb: (...args: unknown[]) => void) => void;
+}
+
+interface EIP6963ProviderInfo {
+  rdns: string;
+  uuid: string;
+  name: string;
+  icon: string;
+}
+
+interface EIP6963ProviderDetail {
+  info: EIP6963ProviderInfo;
+  provider: EIP1193Provider;
+}
+
+interface EIP6963AnnounceProviderEvent extends Event {
+  detail: EIP6963ProviderDetail;
 }
 
 declare global {
+  interface WindowEventMap {
+    "eip6963:announceProvider": EIP6963AnnounceProviderEvent;
+  }
   interface Window {
-    ethereum?: EthProvider;
+    ethereum?: EIP1193Provider & { isMetaMask?: boolean };
   }
 }
 
@@ -55,8 +78,8 @@ function encodeTransfer(to: string, amountRaw: bigint): string {
   return `${ERC20_TRANSFER_SIG}${addrPadded}${amtPadded}`;
 }
 
-/** Switch MetaMask to Polygon or add it. */
-async function ensurePolygonNetwork(provider: EthProvider): Promise<void> {
+/** Switch wallet to Polygon or add it. */
+async function ensurePolygonNetwork(provider: EIP1193Provider): Promise<void> {
   try {
     await provider.request({
       method: "wallet_switchEthereumChain",
@@ -104,7 +127,43 @@ export default function PricingPage() {
     "metamask",
   );
 
-  const hasMetaMask = typeof window !== "undefined" && !!window.ethereum;
+  // ── EIP-6963 wallet detection ───────────────────────────────────────────
+  const [walletProviders, setWalletProviders] = useState<EIP6963ProviderDetail[]>([]);
+  const providersRef = useRef<EIP6963ProviderDetail[]>([]);
+
+  useEffect(() => {
+    const onAnnounce = (event: EIP6963AnnounceProviderEvent) => {
+      const detail = event.detail;
+      // Deduplicate by uuid
+      if (providersRef.current.some((p) => p.info.uuid === detail.info.uuid)) return;
+      providersRef.current = [...providersRef.current, detail];
+      setWalletProviders([...providersRef.current]);
+    };
+
+    window.addEventListener("eip6963:announceProvider", onAnnounce as EventListener);
+    // Request providers from installed extensions
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+    return () => {
+      window.removeEventListener("eip6963:announceProvider", onAnnounce as EventListener);
+    };
+  }, []);
+
+  // Find MetaMask specifically, or fall back to any provider, or window.ethereum
+  const getProvider = useCallback((): EIP1193Provider | null => {
+    // Prefer MetaMask from EIP-6963 announced providers
+    const mm = walletProviders.find(
+      (p) => p.info.rdns === "io.metamask" || p.info.name.toLowerCase().includes("metamask"),
+    );
+    if (mm) return mm.provider;
+    // Fall back to first EIP-6963 provider
+    if (walletProviders.length > 0) return walletProviders[0].provider;
+    // Fall back to legacy window.ethereum
+    if (window.ethereum) return window.ethereum;
+    return null;
+  }, [walletProviders]);
+
+  const hasWallet = walletProviders.length > 0 || !!window.ethereum;
 
   // QR code for manual payment
   const qrData = `ethereum:${PAYMENT_WALLET}@${CHAIN_ID_DEC}?value=0&uint256=${PAYMENT_AMOUNT}e6`;
@@ -118,8 +177,9 @@ export default function PricingPage() {
 
   // ── MetaMask payment ────────────────────────────────────────────────────
   const handleMetaMaskPay = useCallback(async () => {
-    if (!window.ethereum) {
-      setMmStatus("MetaMask not detected. Please install MetaMask.");
+    const provider = getProvider();
+    if (!provider) {
+      setMmStatus("No wallet detected. Please install MetaMask.");
       return;
     }
     if (!user?.id) {
@@ -133,7 +193,7 @@ export default function PricingPage() {
     try {
       // 1. Connect wallet
       setMmStatus("Connecting wallet…");
-      const accounts = (await window.ethereum.request({
+      const accounts = (await provider.request({
         method: "eth_requestAccounts",
       })) as string[];
       const sender = accounts[0];
@@ -141,7 +201,7 @@ export default function PricingPage() {
 
       // 2. Ensure Polygon network
       setMmStatus("Switching to Polygon…");
-      await ensurePolygonNetwork(window.ethereum);
+      await ensurePolygonNetwork(provider);
 
       // 3. Build ERC-20 transfer
       const amountRaw = BigInt(PAYMENT_AMOUNT) * 10n ** BigInt(USDC_DECIMALS); // 7 * 1e6
@@ -150,7 +210,7 @@ export default function PricingPage() {
       setMmStatus("Confirm the transaction in MetaMask…");
 
       // 4. Send tx
-      const hash = (await window.ethereum.request({
+      const hash = (await provider.request({
         method: "eth_sendTransaction",
         params: [
           {
@@ -200,7 +260,7 @@ export default function PricingPage() {
     } finally {
       setMmBusy(false);
     }
-  }, [user, refreshUser, navigate]);
+  }, [user, refreshUser, navigate, getProvider]);
 
   // ── Manual tx hash verify ───────────────────────────────────────────────
   const handleSubmitPayment = async () => {
@@ -282,10 +342,19 @@ export default function PricingPage() {
             <h3>What's included in Pro:</h3>
             <ul>
               <li>
-                <CheckCircle size={14} /> Live trading with real orders
+                <Zap size={14} /> Live trading with real orders
+              </li>
+              <li>
+                <Users size={14} /> Copy Trading dashboard
+              </li>
+              <li>
+                <BadgeCheck size={14} /> User Activity block (whale tracking)
               </li>
               <li>
                 <CheckCircle size={14} /> CLOB API order execution
+              </li>
+              <li>
+                <Shield size={14} /> Duplicate trade prevention
               </li>
               <li>
                 <CheckCircle size={14} /> Wallet credential management
@@ -353,7 +422,7 @@ export default function PricingPage() {
                 </div>
               </div>
 
-              {hasMetaMask ? (
+              {hasWallet ? (
                 <button
                   className="pricing-metamask-btn"
                   onClick={handleMetaMaskPay}

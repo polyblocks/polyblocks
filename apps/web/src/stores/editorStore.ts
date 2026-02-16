@@ -126,6 +126,7 @@ interface EditorState {
   showPropertiesPanel: boolean;
   showTradesPanel: boolean;
   bottomTab: "logs" | "trades" | "positions";
+  selectedEdgeId: string | null;
   isRunning: boolean;
   runIteration: number;
   runError: string | null;
@@ -142,6 +143,8 @@ interface EditorState {
   addNode: (blockType: BlockType, position: { x: number; y: number }) => void;
   removeNode: (nodeId: string) => void;
   selectNode: (nodeId: string | null) => void;
+  selectEdge: (edgeId: string | null) => void;
+  removeEdge: (edgeId: string) => void;
   updateNodeConfig: (nodeId: string, config: Record<string, unknown>) => void;
   updateNodeLabel: (nodeId: string, label: string) => void;
 
@@ -200,6 +203,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   showPropertiesPanel: true,
   showTradesPanel: false,
   bottomTab: "logs" as const,
+  selectedEdgeId: null,
   isRunning: false,
   runIteration: 0,
   runError: null,
@@ -283,7 +287,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   selectNode: (nodeId) => {
-    set({ selectedNodeId: nodeId });
+    set({ selectedNodeId: nodeId, selectedEdgeId: null });
+  },
+
+  selectEdge: (edgeId) => {
+    set({ selectedEdgeId: edgeId, selectedNodeId: null });
+  },
+
+  removeEdge: (edgeId) => {
+    set({
+      edges: get().edges.filter((e) => e.id !== edgeId),
+      selectedEdgeId: get().selectedEdgeId === edgeId ? null : get().selectedEdgeId,
+    });
   },
 
   updateNodeConfig: (nodeId, config) => {

@@ -1,1 +1,1 @@
-{"version":3,"file":"registry.d.ts","sourceRoot":"","sources":["../src/registry.ts"],"names":[],"mappings":"AAAA,OAAO,EACL,eAAe,EACf,SAAS,EAGV,MAAM,YAAY,CAAC;AAgBpB,eAAO,MAAM,cAAc,EAAE,MAAM,CAAC,SAAS,EAAE,eAAe,CA6d7D,CAAC"}
+{"version":3,"file":"registry.d.ts","sourceRoot":"","sources":["../src/registry.ts"],"names":[],"mappings":"AAAA,OAAO,EACL,eAAe,EACf,SAAS,EAGV,MAAM,YAAY,CAAC;AAgBpB,eAAO,MAAM,cAAc,EAAE,MAAM,CAAC,SAAS,EAAE,eAAe,CAolB7D,CAAC"}

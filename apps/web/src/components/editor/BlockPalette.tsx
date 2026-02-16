@@ -11,6 +11,9 @@ import {
 } from "@polyblocks/types";
 import { Input } from "@polyblocks/ui";
 import * as Icons from "lucide-react";
+import { Lock } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useAuthStore } from "../../stores/authStore";
 
 function getIcon(iconName: string, size = 16) {
   const name = iconName
@@ -43,6 +46,14 @@ const CATEGORY_ORDER: NodeCategory[] = [
 
 export default function BlockPalette() {
   const [search, setSearch] = useState("");
+  const isPro = useAuthStore((s) => s.isPro);
+  const navigate = useNavigate();
+
+  /** Blocks that require Pro */
+  const PRO_BLOCKS = new Set<BlockType>([BlockType.UserActivity]);
+
+  /** Blocks with Beta badge */
+  const BETA_BLOCKS = new Set<BlockType>([BlockType.CustomApiData]);
 
   const allBlocks = Object.values(BLOCK_REGISTRY);
   const filtered = search
@@ -80,26 +91,37 @@ export default function BlockPalette() {
         {byCategory.map((group) => (
           <div key={group.category} className="block-palette-category">
             <div className="block-palette-category-label">{group.label}</div>
-            {group.blocks.map((block) => (
-              <div
-                key={block.type}
-                className="block-palette-item"
-                draggable
-                onDragStart={(e) => onDragStart(e, block.type)}
-                title={block.description}
-              >
+            {group.blocks.map((block) => {
+              const isLocked = PRO_BLOCKS.has(block.type) && !isPro();
+              return (
                 <div
-                  className="icon-box"
-                  style={{
-                    background: `${block.color}20`,
-                    color: block.color,
-                  }}
+                  key={block.type}
+                  className={`block-palette-item${isLocked ? " locked" : ""}`}
+                  draggable={!isLocked}
+                  onDragStart={(e) => !isLocked && onDragStart(e, block.type)}
+                  onClick={() => isLocked && navigate("/pricing")}
+                  title={isLocked ? "Pro feature — click to upgrade" : block.description}
+                  style={isLocked ? { opacity: 0.6, cursor: "pointer" } : undefined}
                 >
-                  {getIcon(block.icon)}
+                  <div
+                    className="icon-box"
+                    style={{
+                      background: `${block.color}20`,
+                      color: block.color,
+                    }}
+                  >
+                    {getIcon(block.icon)}
+                  </div>
+                  <span>{block.label}</span>
+                  {isLocked && (
+                    <Lock size={12} style={{ marginLeft: "auto", color: "var(--pb-text-muted)" }} />
+                  )}
+                  {BETA_BLOCKS.has(block.type) && !isLocked && (
+                    <span className="block-beta-badge">BETA</span>
+                  )}
                 </div>
-                <span>{block.label}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ))}
       </div>

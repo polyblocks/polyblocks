@@ -52,10 +52,9 @@ const livePlaceOrderHandler: NodeHandler = {
       tokens?: Array<{ token_id: string }>;
     } | undefined;
 
-    const side = String(node.config.side || "BUY");
-    const outcome = String(node.config.outcome || "YES");
-    const orderType = String(node.config.orderType || "GTC");
-    const sizeUsd = Number(node.config.sizeUsd || 10);
+    const side = inputs.side ? String(inputs.side) : String(node.config.side || "BUY");
+    const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
+    const sizeUsd = inputs.sizeUsd ? Number(inputs.sizeUsd) : Number(node.config.sizeUsd || 10);
 
     const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
     const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
@@ -86,47 +85,26 @@ const livePlaceOrderHandler: NodeHandler = {
 
     ctx.log(
       node.id,
-      `🔴 LIVE ${side} ${outcome} | ${shares.toFixed(2)} shares @ $${price.toFixed(3)} ($${sizeUsd}) [${orderType}]`,
+      `🔴 LIVE ${side} ${outcome} | ${shares.toFixed(2)} shares @ $${price.toFixed(3)} ($${sizeUsd})`,
     );
 
     // Map our order types to CLOB SDK types
     const sideEnum = side === "BUY" ? Side.BUY : Side.SELL;
 
     try {
-      let response: { orderID?: string; status?: string };
-
-      if (orderType === "FOK") {
-        // FOK uses createAndPostMarketOrder
-        response = await client.createAndPostMarketOrder(
-          {
-            tokenID: tokenId,
-            price,
-            amount: sizeUsd,
-            side: sideEnum,
-          },
-          {
-            tickSize: marketInfo.minimum_tick_size || "0.01",
-            negRisk: marketInfo.neg_risk || false,
-          },
-          OrderType.FOK,
-        ) as { orderID?: string; status?: string };
-      } else {
-        // GTC / GTD use createAndPostOrder
-        const limitOrderType = orderType === "GTD" ? OrderType.GTD : OrderType.GTC;
-        response = await client.createAndPostOrder(
-          {
-            tokenID: tokenId,
-            price,
-            size: shares,
-            side: sideEnum,
-          },
-          {
-            tickSize: marketInfo.minimum_tick_size || "0.01",
-            negRisk: marketInfo.neg_risk || false,
-          },
-          limitOrderType,
-        ) as { orderID?: string; status?: string };
-      }
+      const response = await client.createAndPostOrder(
+        {
+          tokenID: tokenId,
+          price,
+          size: shares,
+          side: sideEnum,
+        },
+        {
+          tickSize: marketInfo.minimum_tick_size || "0.01",
+          negRisk: marketInfo.neg_risk || false,
+        },
+        OrderType.GTC,
+      ) as { orderID?: string; status?: string };
 
       ctx.log(
         node.id,
@@ -138,20 +116,7 @@ const livePlaceOrderHandler: NodeHandler = {
       ctx.state.set("paperExposureUsd", prevExposure + sizeUsd);
 
       return {
-        order: {
-          id: response.orderID,
-          type: orderType,
-          side,
-          outcome,
-          price,
-          size: shares,
-          sizeUsd,
-          tokenId,
-          conditionId: market?.conditionId,
-          filled: response.status === "matched",
-          live: true,
-          timestamp: Date.now(),
-        },
+        orderId: response.orderID || "",
         filled: response.status === "matched" ? true : null,
       };
     } catch (err) {
@@ -164,16 +129,16 @@ const livePlaceOrderHandler: NodeHandler = {
 
 const liveCancelOrderHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
-    const order = inputs.order as { id?: string } | undefined;
-    if (!order?.id) {
+    const orderId = inputs.orderId ? String(inputs.orderId) : "";
+    if (!orderId) {
       ctx.log(node.id, "No order ID to cancel");
       return { cancelled: false };
     }
 
     try {
       const client = await createClobClientAsync();
-      await client.cancelOrder({ orderID: order.id });
-      ctx.log(node.id, `✅ LIVE CANCEL — Order ${order.id} cancelled`);
+      await client.cancelOrder({ orderID: orderId });
+      ctx.log(node.id, `✅ LIVE CANCEL — Order ${orderId} cancelled`);
       return { cancelled: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -238,6 +203,71 @@ const liveClosePositionHandler: NodeHandler = {
   },
 };
 
+// ── Live Limit Order ─────────────────────────────────────────────────────────
+
+const liveLimitOrderHandler: NodeHandler = {
+  async execute(node, inputs, ctx) {
+    const market = inputs.market as {
+      clobTokenIds?: string[];
+      conditionId?: string;
+      tokens?: Array<{ token_id: string }>;
+    } | undefined;
+
+    const side = inputs.side ? String(inputs.side) : String(node.config.side || "BUY");
+    const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
+    const sizeUsd = inputs.sizeUsd ? Number(inputs.sizeUsd) : Number(node.config.sizeUsd || 10);
+    const limitPrice = inputs.limitPrice ? Number(inputs.limitPrice) : Number(node.config.limitPrice || 0.5);
+
+    const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
+    const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
+
+    if (!tokenId) {
+      throw new Error("No token ID available for limit order");
+    }
+
+    const shares = Math.floor((sizeUsd / limitPrice) * 100) / 100;
+    const sideEnum = side === "BUY" ? Side.BUY : Side.SELL;
+
+    ctx.log(
+      node.id,
+      `🔴 LIVE LIMIT ${side} ${outcome} | ${shares.toFixed(2)} shares @ $${limitPrice.toFixed(3)} ($${sizeUsd})`,
+    );
+
+    try {
+      const client = await createClobClientAsync();
+      const marketInfo = await client.getMarket(market?.conditionId || "");
+
+      const response = await client.createAndPostOrder(
+        {
+          tokenID: tokenId,
+          price: limitPrice,
+          size: shares,
+          side: sideEnum,
+        },
+        {
+          tickSize: marketInfo.minimum_tick_size || "0.01",
+          negRisk: marketInfo.neg_risk || false,
+        },
+        OrderType.GTC,
+      ) as { orderID?: string; status?: string };
+
+      ctx.log(
+        node.id,
+        `✅ LIVE LIMIT ORDER PLACED — ID: ${response.orderID}, Status: ${response.status}`,
+      );
+
+      return {
+        orderId: response.orderID || "",
+        placed: true,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      ctx.log(node.id, `❌ LIVE LIMIT ORDER FAILED: ${msg}`);
+      throw new Error(`Limit order failed: ${msg}`);
+    }
+  },
+};
+
 // ─── Registry ───────────────────────────────────────────────────────────────
 
 export function createLiveHandlers(): NodeHandlerRegistry {
@@ -246,6 +276,7 @@ export function createLiveHandlers(): NodeHandlerRegistry {
 
   // Override action blocks with live implementations
   registry.set(BlockType.PlaceOrder, livePlaceOrderHandler);
+  registry.set(BlockType.LimitOrder, liveLimitOrderHandler);
   registry.set(BlockType.CancelOrder, liveCancelOrderHandler);
   registry.set(BlockType.ClosePosition, liveClosePositionHandler);
 

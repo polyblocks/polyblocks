@@ -3,7 +3,7 @@
  * React Flow canvas + block palette + properties panel + log drawer.
  */
 
-import { useCallback, useRef, type DragEvent } from "react";
+import { useCallback, useRef, useEffect, useState, type DragEvent } from "react";
 import {
   ReactFlow,
   Background,
@@ -29,10 +29,16 @@ export default function EditorPage() {
   const onConnect = useEditorStore((s) => s.onConnect);
   const addNode = useEditorStore((s) => s.addNode);
   const selectNode = useEditorStore((s) => s.selectNode);
+  const selectEdge = useEditorStore((s) => s.selectEdge);
+  const removeEdge = useEditorStore((s) => s.removeEdge);
+  const selectedEdgeId = useEditorStore((s) => s.selectedEdgeId);
   const showLogDrawer = useEditorStore((s) => s.showLogDrawer);
   const showPropertiesPanel = useEditorStore((s) => s.showPropertiesPanel);
 
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
+
+  // Edge context menu state
+  const [edgeMenu, setEdgeMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
 
   const onDragOver = useCallback((event: DragEvent) => {
     event.preventDefault();
@@ -63,13 +69,52 @@ export default function EditorPage() {
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {
       selectNode(node.id);
+      setEdgeMenu(null);
     },
     [selectNode],
   );
 
   const onPaneClick = useCallback(() => {
     selectNode(null);
-  }, [selectNode]);
+    selectEdge(null);
+    setEdgeMenu(null);
+  }, [selectNode, selectEdge]);
+
+  const onEdgeClick = useCallback(
+    (_: React.MouseEvent, edge: { id: string }) => {
+      selectEdge(edge.id);
+      selectNode(null);
+      setEdgeMenu(null);
+    },
+    [selectEdge, selectNode],
+  );
+
+  // Right-click on edge → show delete menu
+  const onEdgeContextMenu = useCallback(
+    (event: React.MouseEvent, edge: { id: string }) => {
+      event.preventDefault();
+      selectEdge(edge.id);
+      selectNode(null);
+      setEdgeMenu({ x: event.clientX, y: event.clientY, edgeId: edge.id });
+    },
+    [selectEdge, selectNode],
+  );
+
+  // Keyboard: Delete/Backspace removes selected edge
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedEdgeId) {
+        // Don't delete if user is typing in an input
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        e.preventDefault();
+        removeEdge(selectedEdgeId);
+        setEdgeMenu(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedEdgeId, removeEdge]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", minHeight: 0 }}>
@@ -90,15 +135,20 @@ export default function EditorPage() {
             onDrop={onDrop}
             onDragOver={onDragOver}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
+            onEdgeContextMenu={onEdgeContextMenu}
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
             fitView
             snapToGrid
             snapGrid={[16, 16]}
+            deleteKeyCode={null}
             defaultEdgeOptions={{
               type: "smoothstep",
-              animated: true,
+              style: { cursor: "pointer" },
+              interactionWidth: 20,
             }}
+            edgesReconnectable
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={16} size={1} color="var(--pb-border)" />
@@ -110,6 +160,23 @@ export default function EditorPage() {
               style={{ background: "var(--pb-bg-secondary)" }}
             />
           </ReactFlow>
+
+          {/* Edge right-click context menu */}
+          {edgeMenu && (
+            <div
+              className="edge-context-menu"
+              style={{ left: edgeMenu.x, top: edgeMenu.y }}
+            >
+              <button
+                onClick={() => {
+                  removeEdge(edgeMenu.edgeId);
+                  setEdgeMenu(null);
+                }}
+              >
+                🗑️ Delete Connection
+              </button>
+            </div>
+          )}
         </div>
 
         {showPropertiesPanel && <PropertiesPanel />}

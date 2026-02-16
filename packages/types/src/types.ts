@@ -50,8 +50,9 @@ export enum BlockType {
   PriceData = "price_data",
   SpreadData = "spread_data",
   OrderBookData = "orderbook_data",
-  PriceHistory = "price_history",
   MultiMarketCompare = "multi_market_compare",
+  UserActivity = "user_activity",
+  CustomApiData = "custom_api_data",
 
   // Logic
   AndGate = "and_gate",
@@ -62,6 +63,9 @@ export enum BlockType {
   Cooldown = "cooldown",
   MathOp = "math_op",
   PositionSizer = "position_sizer",
+  ProbabilityCalc = "probability_calc",
+  ExpectedValue = "expected_value",
+  EdgeCalc = "edge_calc",
 
   // Risk
   MaxExposure = "max_exposure",
@@ -70,6 +74,7 @@ export enum BlockType {
 
   // Actions
   PlaceOrder = "place_order",
+  LimitOrder = "limit_order",
   CancelOrder = "cancel_order",
   ClosePosition = "close_position",
   Notification = "notification",

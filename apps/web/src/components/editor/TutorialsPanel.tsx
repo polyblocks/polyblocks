@@ -85,6 +85,7 @@ const BLOCK_TUTORIALS: Record<BlockType, {
       "Start with 60s interval for testing, lower for faster strategies",
       "Too frequent triggers can hit API rate limits",
       "Combine with Cooldown block to prevent over-trading",
+      "📋 Example: Interval (30s) → Price Data → Threshold ≤ 0.35 → Place Order BUY YES",
     ],
   },
   [BlockType.PriceCrossTrigger]: {
@@ -100,6 +101,7 @@ const BLOCK_TUTORIALS: Record<BlockType, {
     tips: [
       "Set direction to 'above' for breakout strategies, 'below' for support breaks",
       "Threshold is 0-1 (e.g., 0.65 = 65¢)",
+      "📋 Example: Price Cross > 0.7 → Cooldown (5 min) → Place Order SELL YES",
     ],
   },
   [BlockType.ManualTrigger]: {
@@ -125,6 +127,7 @@ const BLOCK_TUTORIALS: Record<BlockType, {
       "The token_id (not condition_id) is used for all price queries",
       "Each market has YES and NO tokens — the YES token is selected by default",
       "Check volume and liquidity before trading — low-liquidity markets have wide spreads",
+      "📋 Example: Market Selector → Price Data → Threshold → AND Gate → Place Order",
     ],
   },
   [BlockType.PriceData]: {
@@ -172,48 +175,39 @@ const BLOCK_TUTORIALS: Record<BlockType, {
       "Large orders at specific price levels can indicate support/resistance",
     ],
   },
-  [BlockType.PriceHistory]: {
-    purpose: "Get historical price data over time. Useful for moving average and trend-following strategies.",
-    howItWorks: "Fetches timestamped price history from the CLOB API at your chosen interval (1h, 6h, 1d, 1w).",
-    inputExplanations: {
-      market: "Which market's history to fetch. Connect from a Market Selector.",
-      trigger: "When to fetch. Connect from a trigger block.",
-    },
-    outputExplanations: {
-      prices: "Array of {t: timestamp, p: price} objects representing the price history.",
-    },
-    tips: [
-      "Use 1h interval for short-term strategies, 1d for longer-term trends",
-      "Combine with Math blocks to calculate moving averages",
-    ],
-  },
   [BlockType.AndGate]: {
-    purpose: "Only pass through if BOTH conditions are true. Essential for multi-condition strategies.",
-    howItWorks: "Takes two boolean inputs. Outputs true only when both A AND B are true. Otherwise outputs false.",
+    purpose: "Only pass through if BOTH conditions are true. Acts as a signal gate — blocks or allows signals based on conditions.",
+    howItWorks: "Takes two boolean inputs and a signal input. Outputs the boolean result AND passes the signal through ONLY when both A AND B are true. When the gate is 'closed' (result is false), the signal is blocked.",
     inputExplanations: {
-      a: "First condition (true/false). Connect from a Threshold or another logic block.",
-      b: "Second condition (true/false). Connect from a Threshold or another logic block.",
+      a: "First condition (true/false). Connect from a Threshold result or another logic block.",
+      b: "Second condition (true/false). Connect from a Threshold result or another logic block.",
+      signal: "Signal to pass through when the gate is open (both conditions true). Connect from a Threshold signal or trigger.",
     },
     outputExplanations: {
       result: "True only when both A and B are true. False otherwise.",
+      signal: "Passes the incoming signal through ONLY when result is true. Use this to gate downstream actions like Place Order.",
     },
     tips: [
       "Chain multiple AND gates for 3+ conditions",
-      "Example: price above 0.6 AND spread below 0.03 → place order",
+      "Connect Threshold results → A/B inputs, Threshold signal → Signal In, AND Signal Out → Place Order",
+      "📋 Example: (Threshold: price ≤ 0.40) + (Threshold: spread ≤ 0.03) → AND Gate → Place Order",
     ],
   },
   [BlockType.OrGate]: {
-    purpose: "Pass through if EITHER condition is true. For strategies that should trigger on multiple conditions.",
-    howItWorks: "Takes two boolean inputs. Outputs true when either A OR B (or both) are true.",
+    purpose: "Pass through if EITHER condition is true. Acts as a signal gate — allows signals when any condition is met.",
+    howItWorks: "Takes two boolean inputs and a signal input. Outputs the boolean result AND passes the signal through when either A OR B (or both) are true. When both conditions are false, the signal is blocked.",
     inputExplanations: {
       a: "First condition (true/false). Connect from a Threshold or logic block.",
       b: "Second condition (true/false). Connect from a Threshold or logic block.",
+      signal: "Signal to pass through when the gate is open (any condition true). Connect from a trigger or upstream signal.",
     },
     outputExplanations: {
       result: "True when at least one of A or B is true.",
+      signal: "Passes the incoming signal through ONLY when result is true. Use this to gate downstream actions.",
     },
     tips: [
       "Use for fallback conditions: buy if price < 0.4 OR spread < 0.01",
+      "Connect signal through the OR gate to only trigger actions when at least one condition passes",
     ],
   },
   [BlockType.ThresholdCompare]: {
@@ -230,6 +224,7 @@ const BLOCK_TUTORIALS: Record<BlockType, {
       "Prices are 0-1 scale: 0.65 means 65¢",
       "Use >= 0.50 for 'likely yes', < 0.50 for 'likely no'",
       "Connect the Signal output to action blocks, Result to logic gates",
+      "📋 Example: Price Data → Threshold ≤ 0.4 → AND Gate (with Spread ≤ 0.03) → Place Order",
     ],
   },
   [BlockType.Cooldown]: {
@@ -244,6 +239,7 @@ const BLOCK_TUTORIALS: Record<BlockType, {
     tips: [
       "300s (5min) cooldown is a good starting point",
       "Place between Threshold and Place Order to avoid rapid-fire trades",
+      "📋 Example: Threshold → Cooldown (300s) → Place Order — prevents re-buying within 5 minutes",
     ],
   },
   [BlockType.MathOp]: {
@@ -259,6 +255,7 @@ const BLOCK_TUTORIALS: Record<BlockType, {
     tips: [
       "Calculate price change: (current - previous) using subtract",
       "Calculate percentage: divide result by base price",
+      "📋 Example: Price Data (YES midpoint) + Price Data (NO midpoint) → Math (Add) → Debug Log",
     ],
   },
   [BlockType.MaxExposure]: {
@@ -273,6 +270,7 @@ const BLOCK_TUTORIALS: Record<BlockType, {
     tips: [
       "Always use this before Place Order blocks in production strategies",
       "Start with a small limit ($50-100) for paper trading",
+      "📋 Example: Threshold → Max Exposure ($100) → Place Order — stops trading after $100 total",
     ],
   },
   [BlockType.DailyLossLimit]: {
@@ -308,29 +306,55 @@ const BLOCK_TUTORIALS: Record<BlockType, {
     inputExplanations: {
       market: "Which market to trade. Connect from a Market Selector.",
       signal: "When to place the order. Only places when a signal arrives. Connect from risk blocks.",
+      side: "Optional — override BUY/SELL from another block (e.g. UserActivity).",
+      outcome: "Optional — override YES/NO outcome from another block.",
+      sizeUsd: "Optional — override size from a Position Sizer.",
     },
     outputExplanations: {
-      order: "The order object with details (ID, price, size, status). Connect to Cancel Order if needed.",
+      orderId: "The order ID string. Connect to Cancel Order if needed.",
       filled: "Signal emitted when the order is filled (executed).",
     },
     tips: [
-      "GTC = Good-Till-Cancelled (limit order, waits for fill)",
-      "FOK = Fill-Or-Kill (market order, fills immediately or cancels)",
       "Always place risk blocks (Max Exposure, Cooldown) before this block",
+      "Connect a Position Sizer to dynamically calculate the right size",
+      "Example strategy: Market Selector → Price Data → Threshold ≤ 0.4 → Place Order (BUY YES $10)",
+    ],
+  },
+  [BlockType.LimitOrder]: {
+    purpose: "Place a limit order at a specific price — the order sits on the book and only fills when the market reaches your price.",
+    howItWorks: "Unlike Place Order (which fills at the current market price), a Limit Order lets you set a target price. Your order is posted to the order book and waits. BUY limits fill when the price drops to your level, SELL limits fill when the price rises.",
+    inputExplanations: {
+      market: "Which market to trade. Connect from a Market Selector.",
+      signal: "When to place the limit order.",
+      sizeUsd: "Optional — override size from a Position Sizer or other block.",
+      limitPrice: "Optional — override the limit price dynamically from another block (e.g. a Math Op that calculates a target).",
+      outcome: "Optional — override YES/NO from another block.",
+      side: "Optional — override BUY/SELL from another block.",
+    },
+    outputExplanations: {
+      orderId: "The order ID string. Connect to Cancel Order if you want to cancel after a timeout.",
+      placed: "Signal emitted when the limit order is successfully posted to the book.",
+    },
+    tips: [
+      "Use for better prices — set a BUY limit below current market price to buy cheaper",
+      "Combine with Cancel Order + Delay to auto-cancel stale limits: Limit Order → Delay 60s → Cancel Order",
+      "Connect a Price Data block's price output to a Math Op (subtract 0.05) → Limit Order's limitPrice input for 'buy 5¢ below market'",
+      "Example strategy: Market Selector → Price Data → Math Op (price − 0.05) → Limit Order (BUY YES, limit from Math Op)",
     ],
   },
   [BlockType.CancelOrder]: {
     purpose: "Cancel a specific open order.",
-    howItWorks: "When triggered, cancels the order connected to the input.",
+    howItWorks: "When triggered, cancels the order with the given ID.",
     inputExplanations: {
-      order: "The order to cancel. Connect from Place Order's order output.",
+      orderId: "The order ID string to cancel. Connect from Place Order's or Limit Order's orderId output.",
       signal: "When to cancel. Connect from a trigger or condition.",
     },
     outputExplanations: {
       cancelled: "Signal emitted when the cancellation is confirmed.",
     },
     tips: [
-      "Use with a timeout: place order → delay → cancel if not filled",
+      "Use with a timeout: Place Order → Delay → Cancel if not filled",
+      "Example strategy: Place Order → Delay 60s → Cancel Order",
     ],
   },
   [BlockType.ClosePosition]: {
@@ -359,6 +383,7 @@ const BLOCK_TUTORIALS: Record<BlockType, {
     tips: [
       "Use {{message}} in the template to include the input message",
       "Set channel to 'webhook' and configure URL for Discord/Telegram alerts",
+      "📋 Example: Place Order → Notification (email) — get notified every time a trade executes",
     ],
   },
   [BlockType.DebugLog]: {
@@ -482,6 +507,105 @@ const BLOCK_TUTORIALS: Record<BlockType, {
       "Use with a Notification block to get alerts when your markets resolve",
       "Chain with Place Order to auto-reinvest winnings into new markets",
       "The trigger checks on each iteration — it doesn't fire until resolution actually happens",
+    ],
+  },
+
+  // ── Copy-Trading / Activity ───────────────────────────────────────────
+  [BlockType.UserActivity]: {
+    purpose: "Fetches the latest trade for any Polymarket wallet address — the building block for copy-trading strategies.",
+    howItWorks: "Polls the Polymarket Activity API for the single most recent trade of the target address. Outputs a proper Market object (not just a string) so it can connect directly to Place Order. You can skip the first fetch so old positions aren't traded, and de-duplicate so the same trade is never acted on twice.",
+    inputExplanations: {
+      trigger: "A trigger signal that tells the block when to poll. Connect from an Interval Trigger or Manual Trigger.",
+    },
+    outputExplanations: {
+      market: "The full market object of the latest trade. Connect directly to Place Order's Market input.",
+      side: "BUY or SELL — the direction the target trader took.",
+      size: "The USDC size of the target's trade.",
+      price: "The price the target traded at.",
+      outcome: "YES or NO — which outcome the trader bought/sold. Connect to Place Order's Outcome input.",
+      title: "The market question/title as text.",
+      signal: "Fires whenever a new (unseen) trade is detected.",
+    },
+    tips: [
+      "Enable 'Skip first fetch' to avoid immediately copying old positions on startup — the trade will still appear in logs as SKIPPED",
+      "Enable 'Ignore already fetched' to prevent the same trade from triggering multiple orders",
+      "Connect the Market output directly to Place Order — it's a full market object, not just text",
+      "Connect the Outcome output to Place Order's Outcome input to automatically match YES/NO",
+      "📋 Example: Interval → User Activity (whale address) → Place Order — mirror whale trades",
+    ],
+  },
+
+  // ── Probability / Math ────────────────────────────────────────────────
+  [BlockType.ProbabilityCalc]: {
+    purpose: "Converts a raw market price (0–1) into a human-readable implied probability percentage and calculates basic probability metrics.",
+    howItWorks: "Takes the YES price from a Price Data block and outputs the implied probability, complement (NO probability), and log-odds. Useful for display, logging, or feeding into Expected Value / Edge calculations.",
+    inputExplanations: {
+      price: "The YES price (0–1) from a Price Data block.",
+    },
+    outputExplanations: {
+      probability: "Implied probability as a percentage (0–100).",
+      complement: "The NO probability (100 − probability).",
+      logOdds: "Log-odds: ln(p / (1−p)). Useful for advanced models.",
+    },
+    tips: [
+      "A price of 0.65 → probability = 65%, complement = 35%",
+      "Log-odds are used in logistic regression and some Kelly models",
+      "Chain into an Expected Value block to evaluate potential trades",
+    ],
+  },
+  [BlockType.ExpectedValue]: {
+    purpose: "Calculates the expected value (EV) of a bet given your estimated probability and the market price.",
+    howItWorks: "EV = (yourProb × payout) − ((1 − yourProb) × cost). A positive EV means the bet is profitable in the long run. The payout for a YES bet at price p is (1/p − 1) × stake.",
+    inputExplanations: {
+      marketPrice: "The current market price (0–1) from Price Data.",
+      yourProbability: "Your estimated probability (0–1) that the event occurs. Can be manual or from a model.",
+    },
+    outputExplanations: {
+      ev: "Expected value per dollar risked. Positive = +EV (profitable). Negative = −EV (avoid).",
+      isPositive: "Boolean — true if EV > 0, i.e., the trade is profitable in expectation.",
+    },
+    tips: [
+      "Only take trades with positive EV for long-term profitability",
+      "Combine with Edge Calc to get a cleaner edge signal",
+      "Feed the isPositive output into an AND gate with other conditions before trading",
+    ],
+  },
+  [BlockType.EdgeCalc]: {
+    purpose: "Calculates the edge you have over the market: how much your probability estimate differs from the market's implied probability.",
+    howItWorks: "Edge = yourProbability − marketPrice. A positive edge means you think the event is more likely than the market does. The block also outputs a boolean signal when edge exceeds a configurable threshold.",
+    inputExplanations: {
+      marketPrice: "The current market price (0–1) from Price Data.",
+      yourProbability: "Your estimated probability (0–1). Can come from a model, manual input, or Probability Calc.",
+    },
+    outputExplanations: {
+      edge: "Raw edge value: yourProbability − marketPrice. Positive = you have an edge.",
+      hasEdge: "Boolean — true when edge > minEdge threshold (configurable, default 0.05).",
+    },
+    tips: [
+      "A typical minimum edge threshold is 0.05 (5%). Below that, trading costs may eat your profits.",
+      "Feed the edge output into a Position Sizer to auto-calculate Kelly bet sizing",
+      "Combine hasEdge with other signals using an AND gate before placing orders",
+      "If edge is negative, you're worse than the market — don't trade!",
+    ],
+  },
+  [BlockType.CustomApiData]: {
+    purpose: "Fetch data from any external API — weather, crypto prices, news sentiment, sports scores, or any REST endpoint. Brings your own data into the strategy.",
+    howItWorks: "Makes an HTTP request to the configured URL when triggered. Extracts a value using a JSON path expression (e.g. 'main.temp' for weather temperature). Outputs the value as both a number and text, plus the raw JSON response.",
+    inputExplanations: {
+      trigger: "A signal that causes the API to be fetched. Connect from an Interval Trigger or other signal source.",
+    },
+    outputExplanations: {
+      value: "Numeric value extracted from the JSON path. If the value isn't a number, outputs 0.",
+      text: "Text/string value extracted from the JSON path.",
+      json: "The full raw JSON response as a string for debugging.",
+      signal: "Fires when data is successfully fetched. Null on error.",
+    },
+    tips: [
+      "Use with weather APIs: set URL to OpenWeatherMap, JSON path to 'main.temp'",
+      "Combine with Threshold Compare to make decisions based on external data",
+      "Add API keys in the URL query params or in the Headers field",
+      "JSON path uses dot notation: 'data.0.price' gets the first item's price",
+      "📋 Example: Custom API (weather) → Threshold (temp > 30°C) → AND Gate → Place Order",
     ],
   },
 };

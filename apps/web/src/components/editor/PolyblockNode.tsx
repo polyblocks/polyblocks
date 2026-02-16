@@ -61,6 +61,8 @@ function getConfigPreview(blockType: BlockType, config: Record<string, unknown>)
       return `${config.operator} ${config.threshold}`;
     case BlockType.PlaceOrder:
       return `${config.side} ${config.outcome} · $${config.sizeUsd}`;
+    case BlockType.LimitOrder:
+      return `${config.side} ${config.outcome} @ $${config.limitPrice} · $${config.sizeUsd}`;
     case BlockType.MaxExposure:
       return `max $${config.maxExposureUsd}`;
     case BlockType.DailyLossLimit:
@@ -84,6 +86,23 @@ function getConfigPreview(blockType: BlockType, config: Record<string, unknown>)
       return `${config.mode || "kelly"} · $${config.bankroll || 1000}`;
     case BlockType.EventResolutionTrigger:
       return "on resolve";
+    case BlockType.UserActivity:
+      return config.targetAddress
+        ? `${(config.targetAddress as string).slice(0, 6)}…`
+        : "No target";
+    case BlockType.ProbabilityCalc:
+      return "price → prob%";
+    case BlockType.ExpectedValue:
+      return "EV calc";
+    case BlockType.EdgeCalc:
+      return `min edge ${config.minEdge || 0.05}`;
+    case BlockType.CustomApiData: {
+      const u = config.url as string | undefined;
+      if (u) {
+        try { return new URL(u).hostname; } catch { return u.length > 25 ? u.slice(0, 23) + "…" : u; }
+      }
+      return "No URL set";
+    }
     default:
       return null;
   }
@@ -158,7 +177,22 @@ function PolyblockNode({ data, selected }: NodeProps) {
       {(def.inputs.length > 0 || def.outputs.length > 0) && (
         <div className="pb-node-ports">
           <div className="pb-node-ports-col pb-node-ports-in">
-            {def.inputs.map((port: PortDefinition) => (
+            {(() => {
+              // MathOp: generate dynamic input ports based on inputCount
+              let inputPorts: PortDefinition[] = def.inputs;
+              if (blockData.blockType === BlockType.MathOp) {
+                const count = Number(blockData.config.inputCount || 2);
+                const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                inputPorts = [];
+                for (let i = 0; i < count; i++) {
+                  inputPorts.push({
+                    id: letters[i].toLowerCase(),
+                    label: letters[i],
+                    type: PortType.Number,
+                  });
+                }
+              }
+              return inputPorts.map((port: PortDefinition) => (
               <div key={port.id} className="pb-port-row pb-port-in" id={`port-in-${port.id}`}>
                 <Handle
                   type="target"
@@ -176,7 +210,8 @@ function PolyblockNode({ data, selected }: NodeProps) {
                   {PORT_TYPE_SHORT[port.type]}
                 </span>
               </div>
-            ))}
+            ));
+            })()}
           </div>
           <div className="pb-node-ports-col pb-node-ports-out">
             {def.outputs.map((port: PortDefinition) => (

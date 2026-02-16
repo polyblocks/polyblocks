@@ -1,1 +1,1 @@
-{"version":3,"file":"paperHandlers.d.ts","sourceRoot":"","sources":["../../src/engine/paperHandlers.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAKH,OAAO,KAAK,EAAe,mBAAmB,EAAE,MAAM,yBAAyB,CAAC;AAihBhF,wBAAgB,mBAAmB,IAAI,mBAAmB,CAiCzD"}
+{"version":3,"file":"paperHandlers.d.ts","sourceRoot":"","sources":["../../src/engine/paperHandlers.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAKH,OAAO,KAAK,EAAe,mBAAmB,EAAE,MAAM,yBAAyB,CAAC;AAi4BhF,wBAAgB,mBAAmB,IAAI,mBAAmB,CAsCzD"}

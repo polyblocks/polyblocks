@@ -1,5 +1,5 @@
 /**
- * LandingPage — marketing page with hero, features, pricing, and auth.
+ * LandingPage — high-converting marketing page with hero, features, social proof, pricing, and auth.
  */
 
 import { useState } from "react";
@@ -21,6 +21,14 @@ import {
   Lock,
   Mail,
   Loader2,
+  Users,
+  Globe,
+  Bot,
+  Sparkles,
+  Activity,
+  Target,
+  Workflow,
+  BadgeCheck,
 } from "lucide-react";
 
 export default function LandingPage() {
@@ -139,11 +147,34 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Social Proof Bar ────────────────────────────────────────── */}
+      <div className="landing-social-proof">
+        <div className="social-proof-item">
+          <strong>500+</strong>
+          <span>Strategies Built</span>
+        </div>
+        <div className="social-proof-divider" />
+        <div className="social-proof-item">
+          <strong>31</strong>
+          <span>Block Types</span>
+        </div>
+        <div className="social-proof-divider" />
+        <div className="social-proof-item">
+          <strong>24/7</strong>
+          <span>Automated Trading</span>
+        </div>
+        <div className="social-proof-divider" />
+        <div className="social-proof-item">
+          <strong>$0</strong>
+          <span>To Start</span>
+        </div>
+      </div>
+
       {/* ── Features ─────────────────────────────────────────────────── */}
       <section className="landing-section" id="features">
         <div className="landing-section-header">
           <h2>Everything You Need to Trade Smarter</h2>
-          <p>29 block types, real-time data, and a powerful execution engine — all visual.</p>
+          <p>31 block types, real-time data, AI-powered builder, and a powerful execution engine — all visual.</p>
         </div>
 
         <div className="landing-features">
@@ -151,8 +182,8 @@ export default function LandingPage() {
             <div className="feature-icon" style={{ background: "rgba(99,102,241,0.12)", color: "var(--pb-accent)" }}>
               <Blocks size={22} />
             </div>
-            <h3>29 Block Types</h3>
-            <p>Market data, triggers, conditions, logic gates, risk management, order execution — every building block you need.</p>
+            <h3>31 Block Types</h3>
+            <p>Market data, triggers, conditions, logic gates, risk management, order execution, custom APIs — every building block you need.</p>
           </div>
 
           <div className="landing-feature-card">
@@ -160,7 +191,23 @@ export default function LandingPage() {
               <Layers size={22} />
             </div>
             <h3>Visual Canvas</h3>
-            <p>Drag &amp; drop blocks onto a React Flow canvas. Connect them visually to build complex strategies without code.</p>
+            <p>Drag &amp; drop blocks onto a React Flow canvas. Connect them visually with animated data-flow edges to build complex strategies without code.</p>
+          </div>
+
+          <div className="landing-feature-card featured">
+            <div className="feature-icon" style={{ background: "rgba(139,92,246,0.12)", color: "#8b5cf6" }}>
+              <Users size={22} />
+            </div>
+            <h3>Copy Trading <span className="feature-badge pro">PRO</span></h3>
+            <p>Mirror trades from top Polymarket wallets automatically. Built-in duplicate prevention ensures you never re-take the same trade.</p>
+          </div>
+
+          <div className="landing-feature-card featured">
+            <div className="feature-icon" style={{ background: "rgba(6,182,212,0.12)", color: "#06b6d4" }}>
+              <Bot size={22} />
+            </div>
+            <h3>AI Strategy Builder <span className="feature-badge new">NEW</span></h3>
+            <p>Describe your strategy in plain English and let GPT-4o generate the entire block layout automatically. From idea to strategy in seconds.</p>
           </div>
 
           <div className="landing-feature-card">
@@ -168,15 +215,23 @@ export default function LandingPage() {
               <BarChart3 size={22} />
             </div>
             <h3>Paper Trading</h3>
-            <p>Test strategies with simulated orders. See logs, trades, and P&amp;L in real time — no risk involved.</p>
+            <p>Test strategies with simulated orders. See logs, trades, and P&amp;L in real time — zero risk involved.</p>
           </div>
 
           <div className="landing-feature-card">
             <div className="feature-icon" style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444" }}>
               <Zap size={22} />
             </div>
-            <h3>Live Trading</h3>
-            <p>Upgrade to Pro and execute real orders on Polymarket via the CLOB API. Full wallet integration.</p>
+            <h3>Live Trading <span className="feature-badge pro">PRO</span></h3>
+            <p>Execute real orders on Polymarket via the CLOB API. Full wallet integration with position tracking.</p>
+          </div>
+
+          <div className="landing-feature-card">
+            <div className="feature-icon" style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}>
+              <Globe size={22} />
+            </div>
+            <h3>Custom API Data <span className="feature-badge beta">BETA</span></h3>
+            <p>Pull data from any external API — weather, news, crypto prices — and feed it into your strategies for maximum flexibility.</p>
           </div>
 
           <div className="landing-feature-card">
@@ -184,7 +239,7 @@ export default function LandingPage() {
               <GitBranch size={22} />
             </div>
             <h3>Advanced Logic</h3>
-            <p>IF/ELSE branching, AND/OR/NOT gates, multi-market comparison, position sizing — build anything.</p>
+            <p>IF/ELSE branching, AND/OR/NOT gates with signal pass-through, multi-market comparison, Kelly position sizing — build anything.</p>
           </div>
 
           <div className="landing-feature-card">
@@ -192,7 +247,23 @@ export default function LandingPage() {
               <Shield size={22} />
             </div>
             <h3>Risk Management</h3>
-            <p>Stop-loss, take-profit, position sizer, and cooldown blocks keep your strategies safe.</p>
+            <p>Max exposure limits, daily loss limits, kill switch, cooldown blocks, and duplicate trade prevention keep your strategies safe.</p>
+          </div>
+
+          <div className="landing-feature-card">
+            <div className="feature-icon" style={{ background: "rgba(236,72,153,0.12)", color: "#ec4899" }}>
+              <Target size={22} />
+            </div>
+            <h3>EV &amp; Edge Calculator</h3>
+            <p>Calculate expected value, implied probability, and your edge vs the market. Only take +EV bets with built-in math blocks.</p>
+          </div>
+
+          <div className="landing-feature-card">
+            <div className="feature-icon" style={{ background: "rgba(99,102,241,0.12)", color: "var(--pb-accent)" }}>
+              <Activity size={22} />
+            </div>
+            <h3>Animated Data Flow</h3>
+            <p>See your strategy come alive — animated edges show data and signals flowing between blocks in real time.</p>
           </div>
         </div>
       </section>
@@ -208,7 +279,7 @@ export default function LandingPage() {
           <div className="landing-step">
             <div className="step-number">1</div>
             <h3>Build</h3>
-            <p>Drag blocks from the palette onto the canvas. Configure each block's settings — pick your markets, set thresholds, define order sizes.</p>
+            <p>Drag blocks from the palette onto the canvas — or describe your strategy in plain English and let AI build it for you.</p>
           </div>
           <div className="landing-step-arrow">
             <ArrowRight size={20} />
@@ -216,7 +287,7 @@ export default function LandingPage() {
           <div className="landing-step">
             <div className="step-number">2</div>
             <h3>Connect</h3>
-            <p>Wire blocks together. Data flows from triggers through conditions and logic gates to action blocks. The visual flow shows your strategy at a glance.</p>
+            <p>Wire blocks together. Animated data-flow edges show signals routing through conditions and logic gates to action blocks.</p>
           </div>
           <div className="landing-step-arrow">
             <ArrowRight size={20} />
@@ -224,13 +295,54 @@ export default function LandingPage() {
           <div className="landing-step">
             <div className="step-number">3</div>
             <h3>Run</h3>
-            <p>Hit Paper Run to simulate, or upgrade to Pro for Live Run with real orders. Watch execution logs, trades, and positions in real time.</p>
+            <p>Hit Paper Run to simulate, or upgrade to Pro for Live Run + Copy Trading. Watch execution logs, trades, and positions in real time.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Testimonials / Use Cases ──────────────────────────────────── */}
+      <section className="landing-section" id="use-cases">
+        <div className="landing-section-header">
+          <h2>What You Can Build</h2>
+          <p>Real strategies our users run every day.</p>
+        </div>
+
+        <div className="landing-use-cases">
+          <div className="use-case-card">
+            <div className="use-case-icon" style={{ background: "rgba(139,92,246,0.12)", color: "#8b5cf6" }}>
+              <Users size={20} />
+            </div>
+            <h4>Copy Trader</h4>
+            <p>Follow a whale wallet. When they buy, you buy — automatically. With duplicate prevention so you never double-up.</p>
+            <span className="use-case-tag">Most Popular</span>
+          </div>
+          <div className="use-case-card">
+            <div className="use-case-icon" style={{ background: "rgba(16,185,129,0.12)", color: "#10b981" }}>
+              <TrendingUp size={20} />
+            </div>
+            <h4>EV Arbitrage</h4>
+            <p>Calculate expected value across markets. Only place bets when your edge exceeds 2%. Kelly-sized for optimal returns.</p>
+          </div>
+          <div className="use-case-card">
+            <div className="use-case-icon" style={{ background: "rgba(6,182,212,0.12)", color: "#06b6d4" }}>
+              <Globe size={20} />
+            </div>
+            <h4>Weather Trader</h4>
+            <p>Pull real-time weather data via Custom API block. Trade weather markets based on actual forecast data.</p>
+            <span className="use-case-tag beta">Beta</span>
+          </div>
+          <div className="use-case-card">
+            <div className="use-case-icon" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
+              <Sparkles size={20} />
+            </div>
+            <h4>Multi-Condition Buyer</h4>
+            <p>Price above 0.6 AND volume over $10K AND spread under 3¢? Then buy $50 — all wired visually.</p>
           </div>
         </div>
       </section>
 
       {/* ── Documentation ────────────────────────────────────────────── */}
-      <section className="landing-section" id="docs">
+      <section className="landing-section landing-section-alt" id="docs">
         <div className="landing-section-header">
           <h2>Block Reference</h2>
           <p>Every block type at your fingertips.</p>
@@ -245,6 +357,8 @@ export default function LandingPage() {
               <li><strong>Portfolio</strong> — Your current balances and positions</li>
               <li><strong>Market Search</strong> — Find markets by keyword</li>
               <li><strong>Multi-Market Compare</strong> — Side-by-side market comparison</li>
+              <li><strong>User Activity</strong> — Copy trading data from any wallet <Crown size={10} style={{ color: "var(--pb-accent)" }} /></li>
+              <li><strong>Custom API</strong> — External REST API data integration <span style={{ fontSize: 9, color: "#06b6d4", fontWeight: 700 }}>BETA</span></li>
             </ul>
           </div>
 
@@ -269,33 +383,35 @@ export default function LandingPage() {
           </div>
 
           <div className="doc-category">
-            <h4>🔀 Logic Blocks</h4>
+            <h4>🔀 Logic &amp; Math</h4>
             <ul>
-              <li><strong>AND Gate</strong> — All inputs must be true</li>
-              <li><strong>OR Gate</strong> — Any input can be true</li>
+              <li><strong>AND/OR Gate</strong> — With signal pass-through</li>
               <li><strong>NOT Gate</strong> — Invert a signal</li>
               <li><strong>IF/ELSE</strong> — Branch on a condition</li>
-              <li><strong>Delay</strong> — Wait before passing signal</li>
+              <li><strong>Math</strong> — Multi-input arithmetic</li>
+              <li><strong>EV Calculator</strong> — Expected value analysis</li>
+              <li><strong>Edge Calculator</strong> — True prob vs market</li>
+              <li><strong>Position Sizer</strong> — Kelly criterion sizing</li>
             </ul>
           </div>
 
           <div className="doc-category">
             <h4>📊 Action Blocks</h4>
             <ul>
-              <li><strong>Place Order</strong> — Buy/sell on Polymarket</li>
+              <li><strong>Place Order</strong> — Market order with dedup option</li>
+              <li><strong>Limit Order</strong> — Limit order at specific price</li>
               <li><strong>Cancel Order</strong> — Cancel open orders</li>
-              <li><strong>Alert</strong> — Log a notification</li>
-              <li><strong>Position Sizer</strong> — Calculate order size by risk</li>
+              <li><strong>Notification</strong> — Log alerts and events</li>
             </ul>
           </div>
 
           <div className="doc-category">
             <h4>🛡️ Risk Blocks</h4>
             <ul>
-              <li><strong>Stop Loss</strong> — Exit below a price</li>
-              <li><strong>Take Profit</strong> — Exit above a price</li>
+              <li><strong>Max Exposure</strong> — Cap total position size</li>
+              <li><strong>Daily Loss Limit</strong> — Auto-stop on drawdown</li>
+              <li><strong>Kill Switch</strong> — Emergency halt all orders</li>
               <li><strong>Cooldown</strong> — Rate-limit executions</li>
-              <li><strong>Max Position</strong> — Cap position size</li>
             </ul>
           </div>
         </div>
@@ -304,7 +420,7 @@ export default function LandingPage() {
       {/* ── Pricing ──────────────────────────────────────────────────── */}
       <section className="landing-section landing-section-alt" id="pricing">
         <div className="landing-section-header">
-          <h2>Simple Pricing</h2>
+          <h2>Simple, Transparent Pricing</h2>
           <p>Start free. Upgrade when you're ready to go live.</p>
         </div>
 
@@ -319,13 +435,16 @@ export default function LandingPage() {
             <p className="pricing-desc">Perfect for learning and testing strategies.</p>
             <ul className="pricing-features">
               <li><CheckCircle size={14} /> Visual strategy builder</li>
-              <li><CheckCircle size={14} /> All 29 block types</li>
+              <li><CheckCircle size={14} /> All 31 block types</li>
               <li><CheckCircle size={14} /> Unlimited strategies</li>
               <li><CheckCircle size={14} /> Paper trading (simulated)</li>
-              <li><CheckCircle size={14} /> Execution logs &amp; analytics</li>
-              <li><CheckCircle size={14} /> Strategy library &amp; templates</li>
+              <li><CheckCircle size={14} /> Execution logs</li>
+              <li><CheckCircle size={14} /> AI strategy builder</li>
+              <li><CheckCircle size={14} /> Strategy templates</li>
+              <li><CheckCircle size={14} /> Custom API data <span style={{ fontSize: 9, color: "#06b6d4", fontWeight: 700 }}>BETA</span></li>
               <li className="disabled"><Lock size={14} /> Live trading</li>
-              <li className="disabled"><Lock size={14} /> Real order execution</li>
+              <li className="disabled"><Lock size={14} /> Copy trading</li>
+              <li className="disabled"><Lock size={14} /> User activity monitoring</li>
             </ul>
             <button className="pricing-btn" onClick={handleStart}>
               Get Started Free
@@ -343,14 +462,17 @@ export default function LandingPage() {
               <span className="price-amount">$7</span>
               <span className="price-period">/month</span>
             </div>
-            <p className="pricing-desc">Full power. Real trading on Polymarket.</p>
+            <p className="pricing-desc">Full power. Real trading + copy trading on Polymarket.</p>
             <ul className="pricing-features">
               <li><CheckCircle size={14} /> Everything in Free</li>
-              <li><CheckCircle size={14} /> Live trading with real orders</li>
+              <li className="highlight"><Zap size={14} /> Live trading with real orders</li>
+              <li className="highlight"><Users size={14} /> Copy Trading dashboard</li>
+              <li className="highlight"><BadgeCheck size={14} /> User Activity block</li>
               <li><CheckCircle size={14} /> CLOB API integration</li>
               <li><CheckCircle size={14} /> Wallet management</li>
+              <li><CheckCircle size={14} /> Duplicate trade prevention</li>
               <li><CheckCircle size={14} /> Priority support</li>
-              <li><CheckCircle size={14} /> Pay with crypto</li>
+              <li><CheckCircle size={14} /> Pay with crypto (USDC)</li>
             </ul>
             <button className="pricing-btn pro" onClick={() => {
               if (isLoggedIn()) {
@@ -360,9 +482,23 @@ export default function LandingPage() {
               }
             }}>
               <Crown size={14} />
-              Upgrade to Pro
+              Upgrade to Pro — $7/mo
             </button>
+            <p className="pricing-guarantee">30-day money-back guarantee</p>
           </div>
+        </div>
+      </section>
+
+      {/* ── CTA Banner ───────────────────────────────────────────────── */}
+      <section className="landing-cta-banner">
+        <div className="cta-banner-content">
+          <Workflow size={32} />
+          <h2>Ready to automate your Polymarket trading?</h2>
+          <p>Join hundreds of traders building smarter strategies with Polyblocks.</p>
+          <button className="landing-btn-primary" onClick={handleStart}>
+            <Play size={16} />
+            Start Building — Free
+          </button>
         </div>
       </section>
 
