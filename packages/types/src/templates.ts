@@ -1,0 +1,205 @@
+import { BlockType, StrategyTemplate } from "./types.js";
+
+export const BUILTIN_TEMPLATES: StrategyTemplate[] = [
+  {
+    id: "tpl_simple_price_alert",
+    name: "Simple Price Alert",
+    description:
+      "Watch a market and get notified when the price crosses a threshold. Great for learning the basics.",
+    category: "Getting Started",
+    difficulty: "beginner",
+    tags: ["alert", "price", "notification"],
+    graph: {
+      name: "Simple Price Alert",
+      version: 1,
+      nodes: [
+        {
+          id: "n1",
+          type: BlockType.MarketSelector,
+          position: { x: 100, y: 200 },
+          config: { conditionId: "", question: "" },
+        },
+        {
+          id: "n2",
+          type: BlockType.IntervalTrigger,
+          position: { x: 100, y: 50 },
+          config: { intervalMs: 60_000 },
+        },
+        {
+          id: "n3",
+          type: BlockType.PriceData,
+          position: { x: 400, y: 150 },
+          config: { side: "YES" },
+        },
+        {
+          id: "n4",
+          type: BlockType.ThresholdCompare,
+          position: { x: 700, y: 150 },
+          config: { operator: ">=", threshold: 0.7 },
+        },
+        {
+          id: "n5",
+          type: BlockType.Notification,
+          position: { x: 1000, y: 150 },
+          config: {
+            channel: "log",
+            template: "Price crossed threshold: {{value}}",
+          },
+        },
+      ],
+      edges: [
+        { id: "e1", source: "n1", sourceHandle: "market", target: "n3", targetHandle: "market" },
+        { id: "e2", source: "n2", sourceHandle: "signal", target: "n3", targetHandle: "trigger" },
+        { id: "e3", source: "n3", sourceHandle: "midpoint", target: "n4", targetHandle: "value" },
+        { id: "e4", source: "n4", sourceHandle: "signal", target: "n5", targetHandle: "signal" },
+      ],
+    },
+  },
+  {
+    id: "tpl_spread_scalper",
+    name: "Spread Scalper (Paper)",
+    description:
+      "Place limit orders on both sides of wide spreads to capture the bid-ask. Includes risk limits.",
+    category: "Market Making",
+    difficulty: "intermediate",
+    tags: ["spread", "market-making", "limit-order"],
+    graph: {
+      name: "Spread Scalper",
+      version: 1,
+      nodes: [
+        {
+          id: "n1",
+          type: BlockType.MarketSelector,
+          position: { x: 50, y: 200 },
+          config: { conditionId: "", question: "" },
+        },
+        {
+          id: "n2",
+          type: BlockType.IntervalTrigger,
+          position: { x: 50, y: 50 },
+          config: { intervalMs: 30_000 },
+        },
+        {
+          id: "n3",
+          type: BlockType.SpreadData,
+          position: { x: 350, y: 100 },
+          config: {},
+        },
+        {
+          id: "n4",
+          type: BlockType.ThresholdCompare,
+          position: { x: 650, y: 100 },
+          config: { operator: ">=", threshold: 0.04 },
+          label: "Spread > 4¢?",
+        },
+        {
+          id: "n5",
+          type: BlockType.MaxExposure,
+          position: { x: 950, y: 100 },
+          config: { maxExposureUsd: 50 },
+        },
+        {
+          id: "n6",
+          type: BlockType.PriceData,
+          position: { x: 350, y: 300 },
+          config: { side: "YES" },
+        },
+        {
+          id: "n7",
+          type: BlockType.PlaceOrder,
+          position: { x: 1250, y: 50 },
+          config: { side: "BUY", outcome: "YES", orderType: "GTC", sizeUsd: 5 },
+          label: "Buy YES",
+        },
+        {
+          id: "n8",
+          type: BlockType.PlaceOrder,
+          position: { x: 1250, y: 250 },
+          config: { side: "BUY", outcome: "NO", orderType: "GTC", sizeUsd: 5 },
+          label: "Buy NO",
+        },
+      ],
+      edges: [
+        { id: "e1", source: "n1", sourceHandle: "market", target: "n3", targetHandle: "market" },
+        { id: "e2", source: "n2", sourceHandle: "signal", target: "n3", targetHandle: "trigger" },
+        { id: "e3", source: "n3", sourceHandle: "spread", target: "n4", targetHandle: "value" },
+        { id: "e4", source: "n4", sourceHandle: "signal", target: "n5", targetHandle: "signal" },
+        { id: "e5", source: "n5", sourceHandle: "signal", target: "n7", targetHandle: "signal" },
+        { id: "e6", source: "n5", sourceHandle: "signal", target: "n8", targetHandle: "signal" },
+        { id: "e7", source: "n1", sourceHandle: "market", target: "n6", targetHandle: "market" },
+        { id: "e8", source: "n2", sourceHandle: "signal", target: "n6", targetHandle: "trigger" },
+        { id: "e9", source: "n1", sourceHandle: "market", target: "n7", targetHandle: "market" },
+        { id: "e10", source: "n1", sourceHandle: "market", target: "n8", targetHandle: "market" },
+        { id: "e11", source: "n6", sourceHandle: "bestBid", target: "n7", targetHandle: "price" },
+        { id: "e12", source: "n6", sourceHandle: "bestAsk", target: "n8", targetHandle: "price" },
+      ],
+    },
+  },
+  {
+    id: "tpl_momentum",
+    name: "Momentum Buyer",
+    description:
+      "Buy YES when a market's price has been consistently rising. Uses cooldown to avoid over-trading.",
+    category: "Trend Following",
+    difficulty: "intermediate",
+    tags: ["momentum", "trend", "cooldown"],
+    graph: {
+      name: "Momentum Buyer",
+      version: 1,
+      nodes: [
+        {
+          id: "n1",
+          type: BlockType.MarketSelector,
+          position: { x: 50, y: 200 },
+          config: { conditionId: "", question: "" },
+        },
+        {
+          id: "n2",
+          type: BlockType.IntervalTrigger,
+          position: { x: 50, y: 50 },
+          config: { intervalMs: 120_000 },
+        },
+        {
+          id: "n3",
+          type: BlockType.PriceData,
+          position: { x: 350, y: 150 },
+          config: { side: "YES" },
+        },
+        {
+          id: "n4",
+          type: BlockType.ThresholdCompare,
+          position: { x: 650, y: 100 },
+          config: { operator: ">=", threshold: 0.55 },
+          label: "Price > 55¢?",
+        },
+        {
+          id: "n5",
+          type: BlockType.Cooldown,
+          position: { x: 950, y: 100 },
+          config: { cooldownMs: 600_000 },
+        },
+        {
+          id: "n6",
+          type: BlockType.DailyLossLimit,
+          position: { x: 1200, y: 100 },
+          config: { maxDailyLossUsd: 25 },
+        },
+        {
+          id: "n7",
+          type: BlockType.PlaceOrder,
+          position: { x: 1500, y: 100 },
+          config: { side: "BUY", outcome: "YES", orderType: "FOK", sizeUsd: 10 },
+        },
+      ],
+      edges: [
+        { id: "e1", source: "n1", sourceHandle: "market", target: "n3", targetHandle: "market" },
+        { id: "e2", source: "n2", sourceHandle: "signal", target: "n3", targetHandle: "trigger" },
+        { id: "e3", source: "n3", sourceHandle: "midpoint", target: "n4", targetHandle: "value" },
+        { id: "e4", source: "n4", sourceHandle: "signal", target: "n5", targetHandle: "signal" },
+        { id: "e5", source: "n5", sourceHandle: "signal", target: "n6", targetHandle: "signal" },
+        { id: "e6", source: "n6", sourceHandle: "signal", target: "n7", targetHandle: "signal" },
+        { id: "e7", source: "n1", sourceHandle: "market", target: "n7", targetHandle: "market" },
+      ],
+    },
+  },
+];

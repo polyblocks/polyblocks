@@ -1,0 +1,21 @@
+{
+  "name": "@polyblocks/engine-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf dist",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@polyblocks/types": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "rimraf": "^6.0.0"
+  }
+}
