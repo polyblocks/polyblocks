@@ -50,7 +50,7 @@ export async function registerStrategyRoutes(app: FastifyInstance) {
       _id: id,
       userId: body.userId || "anonymous",
       name: body.name || "Untitled Strategy",
-      description: (body as Record<string, unknown>).description as string || "",
+      description: (body as unknown as Record<string, unknown>).description as string || "",
       nodes: body.nodes || [],
       edges: body.edges || [],
       status: body.status || "draft",
