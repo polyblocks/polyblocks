@@ -1,0 +1,134 @@
+/**
+ * Credentials routes — store and manage per-user Polymarket API credentials.
+ * Private keys and API secrets are encrypted at rest with AES-256-GCM.
+ * Stored in MongoDB (credentials collection, one doc per user).
+ */
+import { ClobClient } from "@polymarket/clob-client";
+import { Wallet } from "ethers";
+import { credentialsCol } from "../db.js";
+import { encrypt, decrypt } from "../crypto.js";
+/**
+ * Retrieve decrypted credentials for a given userId.
+ * Falls back to "default" userId for backward-compatibility with single-user mode.
+ */
+export async function getCredentials(userId) {
+    const id = userId || "default";
+    const doc = await credentialsCol().findOne({ userId: id });
+    if (!doc || !doc.isConfigured) {
+        return {
+            privateKey: "",
+            apiKey: "",
+            apiSecret: "",
+            passphrase: "",
+            signatureType: 0,
+            funderAddress: "",
+            isConfigured: false,
+        };
+    }
+    return {
+        privateKey: decrypt(doc.privateKey),
+        apiKey: decrypt(doc.apiKey),
+        apiSecret: decrypt(doc.apiSecret),
+        passphrase: decrypt(doc.passphrase),
+        signatureType: doc.signatureType,
+        funderAddress: doc.funderAddress,
+        isConfigured: true,
+    };
+}
+const CLOB_HOST = "https://clob.polymarket.com";
+const CHAIN_ID = 137;
+export async function registerCredentialRoutes(app) {
+    // ── Get credential status (never returns private key or secret) ──────────
+    app.get("/status", async (req) => {
+        const userId = req.query.userId || "default";
+        const creds = await getCredentials(userId);
+        return {
+            isConfigured: creds.isConfigured,
+            signatureType: creds.signatureType,
+            funderAddress: creds.funderAddress,
+            hasApiKey: !!creds.apiKey,
+            apiKeyPreview: creds.apiKey
+                ? `${creds.apiKey.slice(0, 8)}…${creds.apiKey.slice(-4)}`
+                : null,
+        };
+    });
+    // ── Save credentials + derive API key ────────────────────────────────────
+    app.post("/save", async (request) => {
+        const body = request.body;
+        if (!body.privateKey) {
+            return { success: false, error: "Private key is required" };
+        }
+        const userId = body.userId || "default";
+        try {
+            const signer = new Wallet(body.privateKey);
+            const walletAddress = signer.address;
+            // Derive API credentials from Polymarket
+            const initClient = new ClobClient(CLOB_HOST, CHAIN_ID, signer);
+            const apiCredsRaw = await initClient.createOrDeriveApiKey();
+            const derivedKey = apiCredsRaw.apiKey || apiCredsRaw.key || "";
+            const funderAddress = body.funderAddress || walletAddress;
+            // Encrypt sensitive values before storing
+            const doc = {
+                _id: userId,
+                userId,
+                privateKey: encrypt(body.privateKey),
+                apiKey: encrypt(derivedKey),
+                apiSecret: encrypt(apiCredsRaw.secret),
+                passphrase: encrypt(apiCredsRaw.passphrase),
+                signatureType: body.signatureType ?? 0,
+                funderAddress,
+                isConfigured: true,
+            };
+            await credentialsCol().updateOne({ userId }, { $set: doc }, { upsert: true });
+            return {
+                success: true,
+                walletAddress,
+                funderAddress,
+                apiKeyPreview: derivedKey.length > 12
+                    ? `${derivedKey.slice(0, 8)}…${derivedKey.slice(-4)}`
+                    : derivedKey,
+                signatureType: body.signatureType ?? 0,
+            };
+        }
+        catch (err) {
+            return {
+                success: false,
+                error: err instanceof Error ? err.message : String(err),
+            };
+        }
+    });
+    // ── Clear credentials ────────────────────────────────────────────────────
+    app.delete("/clear", async (req) => {
+        const userId = req.query.userId || "default";
+        await credentialsCol().deleteOne({ userId });
+        return { success: true };
+    });
+    // ── Test connection ──────────────────────────────────────────────────────
+    app.post("/test", async (req) => {
+        const userId = (req.body || {}).userId || "default";
+        const creds = await getCredentials(userId);
+        if (!creds.isConfigured) {
+            return { success: false, error: "No credentials configured" };
+        }
+        try {
+            const signer = new Wallet(creds.privateKey);
+            const client = new ClobClient(CLOB_HOST, CHAIN_ID, signer, {
+                key: creds.apiKey,
+                secret: creds.apiSecret,
+                passphrase: creds.passphrase,
+            }, creds.signatureType, creds.funderAddress);
+            const orders = await client.getOpenOrders();
+            return {
+                success: true,
+                message: `Connection successful! ${orders.length} open orders found.`,
+            };
+        }
+        catch (err) {
+            return {
+                success: false,
+                error: err instanceof Error ? err.message : String(err),
+            };
+        }
+    });
+}
+//# sourceMappingURL=credentials.js.map

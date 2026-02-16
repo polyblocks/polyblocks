@@ -2,8 +2,10 @@
 node_modules/
 
 # build output
-dist/
 .turbo/
+
+# Ignore frontend dist (large, rebuilt by Vite)
+apps/web/dist/
 
 # env files
 .env
