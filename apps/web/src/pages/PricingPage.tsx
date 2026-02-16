@@ -122,6 +122,10 @@ export default function PricingPage() {
       setMmStatus("MetaMask not detected. Please install MetaMask.");
       return;
     }
+    if (!user?.id) {
+      setMmStatus("Please log in before making a payment.");
+      return;
+    }
     setMmBusy(true);
     setMmStatus(null);
     setSubmitResult(null);
@@ -162,20 +166,29 @@ export default function PricingPage() {
       setMmStatus("Transaction sent! Verifying…");
 
       // 5. Auto-verify on backend
-      const res = await fetch("/api/auth/verify-payment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user?.id, txHash: hash }),
-      });
-      const result = (await res.json()) as { ok: boolean; message: string };
-      setSubmitResult(result);
+      try {
+        const res = await fetch("/api/auth/verify-payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            txHash: hash,
+            walletAddress: sender,
+          }),
+        });
+        const result = (await res.json()) as { ok: boolean; message: string };
+        setSubmitResult(result);
 
-      if (result.ok) {
-        setMmStatus("Payment verified ✓");
-        await refreshUser();
-        setTimeout(() => navigate("/"), 2000);
-      } else {
-        setMmStatus(null);
+        if (result.ok) {
+          setMmStatus("Payment verified ✓");
+          await refreshUser();
+          setTimeout(() => navigate("/"), 2000);
+        } else {
+          setMmStatus(null);
+        }
+      } catch {
+        // Backend verification failed but tx was sent — user can verify manually
+        setMmStatus("Transaction sent but auto-verify failed. Use Manual Transfer tab to verify with your tx hash.");
       }
     } catch (err: unknown) {
       const e = err as { code?: number; message?: string };
