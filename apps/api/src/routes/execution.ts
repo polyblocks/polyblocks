@@ -10,9 +10,9 @@ import type {
 import { evaluateGraph } from "@polyblocks/engine-core";
 import type { ExecutionContext } from "@polyblocks/engine-core";
 import { nanoid } from "nanoid";
-import { createPaperHandlers } from "../engine/paperHandlers";
-import { createLiveHandlers } from "../engine/liveHandlers";
-import { getCredentials } from "./credentials";
+import { createPaperHandlers } from "../engine/paperHandlers.js";
+import { createLiveHandlers } from "../engine/liveHandlers.js";
+import { getCredentials } from "./credentials.js";
 
 // ── In-memory execution log store ────────────────────────────────────────────
 const executionLogs = new Map<string, ExecutionLog[]>();

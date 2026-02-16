@@ -6,12 +6,13 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node --experimental-specifier-resolution=node dist/server.js",
     "clean": "rimraf dist",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",
+    "@fastify/static": "^8.3.0",
     "@fastify/websocket": "^11.0.0",
     "@polyblocks/engine-core": "workspace:*",
     "@polyblocks/types": "workspace:*",

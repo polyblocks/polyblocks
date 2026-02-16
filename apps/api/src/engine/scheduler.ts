@@ -8,7 +8,7 @@
 import type { StrategyGraph, ExecutionLog } from "@polyblocks/types";
 import { evaluateGraph } from "@polyblocks/engine-core";
 import type { ExecutionContext } from "@polyblocks/engine-core";
-import { createPaperHandlers } from "./paperHandlers";
+import { createPaperHandlers } from "./paperHandlers.js";
 import { nanoid } from "nanoid";
 
 interface ScheduledStrategy {

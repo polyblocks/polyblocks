@@ -3,23 +3,32 @@
  * Fastify + WebSocket + BullMQ scheduler
  */
 
-import { resolve } from "path";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import { config } from "dotenv";
 
-// Load .env from the monorepo root
-config({ path: resolve(import.meta.dirname, "../../../.env"), override: true });
+// Load .env in development (production sets env vars directly)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const envPath = resolve(__dirname, "../../../.env");
+if (existsSync(envPath)) {
+  config({ path: envPath, override: true });
+}
 
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { connectDb } from "./db";
-import { registerStrategyRoutes } from "./routes/strategies";
-import { registerMarketRoutes } from "./routes/markets";
-import { registerExecutionRoutes } from "./routes/execution";
-import { registerCredentialRoutes } from "./routes/credentials";
-import { registerAuthRoutes } from "./routes/auth";
+import fastifyStatic from "@fastify/static";
+import { connectDb } from "./db.js";
+import { registerStrategyRoutes } from "./routes/strategies.js";
+import { registerMarketRoutes } from "./routes/markets.js";
+import { registerExecutionRoutes } from "./routes/execution.js";
+import { registerCredentialRoutes } from "./routes/credentials.js";
+import { registerAuthRoutes } from "./routes/auth.js";
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
+const IS_PROD = process.env.NODE_ENV === "production";
 
 async function main() {
   const app = Fastify({
@@ -48,6 +57,24 @@ async function main() {
     status: "ok",
     timestamp: new Date().toISOString(),
   }));
+
+  // ── Serve frontend in production ────────────────────────────────────────
+  const webDist = resolve(__dirname, "../../web/dist");
+  if (IS_PROD && existsSync(webDist)) {
+    await app.register(fastifyStatic, {
+      root: webDist,
+      prefix: "/",
+      wildcard: false,
+    });
+
+    // SPA fallback — serve index.html for all non-API routes
+    app.setNotFoundHandler(async (req, reply) => {
+      if (req.url.startsWith("/api/")) {
+        return reply.code(404).send({ error: "Not found" });
+      }
+      return reply.sendFile("index.html");
+    });
+  }
 
   // ── Start ───────────────────────────────────────────────────────────────
   try {
