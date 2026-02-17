@@ -402,7 +402,7 @@ const placeOrderHandler: NodeHandler = {
       `📝 PAPER ${side} ${outcome} | ${shares.toFixed(2)} shares @ $${fillPrice.toFixed(3)} ($${sizeUsd}) [${elapsed}ms]`,
     );
 
-    return { orderId: paperOrder.id, filled: true };
+    return { order: paperOrder, orderId: paperOrder.id, filled: true };
   },
 };
 
@@ -443,6 +443,19 @@ const limitOrderHandler: NodeHandler = {
 
     const paperId = `paper_limit_${Date.now()}`;
 
+    const paperOrder = {
+      id: paperId,
+      side,
+      outcome,
+      price: limitPrice,
+      size: shares,
+      sizeUsd,
+      tokenId,
+      conditionId: market?.conditionId,
+      filled: wouldFill,
+      timestamp: Date.now(),
+    };
+
     if (wouldFill) {
       const prevExposure = (ctx.state.get("paperExposureUsd") as number) || 0;
       ctx.state.set("paperExposureUsd", prevExposure + sizeUsd);
@@ -457,7 +470,7 @@ const limitOrderHandler: NodeHandler = {
       );
     }
 
-    return { orderId: paperId, placed: true };
+    return { order: paperOrder, orderId: paperId, placed: true };
   },
 };
 

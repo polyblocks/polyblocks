@@ -189,7 +189,28 @@ const livePlaceOrderHandler: NodeHandler = {
         ctx.state.set("paperExposureUsd", prevExposure + sizeUsd);
       }
 
+      // Get fill price from response or estimate from size
+      let fillPrice = 0.5;
+      if (response.takingAmount && response.makingAmount) {
+        fillPrice = Number(response.makingAmount) / Number(response.takingAmount);
+      }
+      const shares = sizeUsd / fillPrice;
+
+      const liveOrder = {
+        id: response.orderID || `live_${Date.now()}`,
+        side,
+        outcome,
+        price: fillPrice,
+        size: shares,
+        sizeUsd,
+        tokenId,
+        conditionId: market?.conditionId,
+        filled,
+        timestamp: Date.now(),
+      };
+
       return {
+        order: liveOrder,
         orderId: response.orderID || "",
         filled,
         status: rawStatus != null ? String(rawStatus) : "unknown",
@@ -401,7 +422,21 @@ const liveLimitOrderHandler: NodeHandler = {
         `${statusEmoji} LIVE LIMIT ORDER — ID: ${response.orderID}, Status: ${statusLabel}`,
       );
 
+      const liveOrder = {
+        id: response.orderID || `live_limit_${Date.now()}`,
+        side,
+        outcome,
+        price: limitPrice,
+        size: shares,
+        sizeUsd,
+        tokenId,
+        conditionId: market?.conditionId,
+        filled,
+        timestamp: Date.now(),
+      };
+
       return {
+        order: liveOrder,
         orderId: response.orderID || "",
         placed: true,
         filled,
