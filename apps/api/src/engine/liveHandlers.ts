@@ -24,6 +24,18 @@ async function createClobClientAsync(userId?: string): Promise<ClobClient> {
   }
 
   const signer = new Wallet(creds.privateKey);
+  const signerAddr = await signer.getAddress();
+
+  // Debug: log credential details for troubleshooting (redacted secrets)
+  console.log(`[LIVE] ClobClient config:`);
+  console.log(`  host:          ${CLOB_HOST}`);
+  console.log(`  signerAddress: ${signerAddr}`);
+  console.log(`  funderAddress: ${creds.funderAddress || "(not set — will use signer)"}`);
+  console.log(`  signatureType: ${creds.signatureType}`);
+  console.log(`  apiKey:        ${creds.apiKey.slice(0, 8)}…${creds.apiKey.slice(-4)}`);
+  console.log(`  hasSecret:     ${creds.apiSecret.length > 0}`);
+  console.log(`  hasPassphrase: ${creds.passphrase.length > 0}`);
+  console.log(`  builderConfig: ${builderConfig ? "yes" : "no"}`);
 
   return new ClobClient(
     CLOB_HOST,
@@ -81,6 +93,8 @@ const livePlaceOrderHandler: NodeHandler = {
     );
 
     const client = await createClobClientAsync();
+    ctx.log(node.id, `🔑 tokenId: ${tokenId}`);
+    ctx.log(node.id, `🔑 CLOB_HOST: ${CLOB_HOST}`);
 
     try {
       // Use the SDK's true market order method.
