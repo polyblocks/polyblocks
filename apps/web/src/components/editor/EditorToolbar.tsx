@@ -34,6 +34,8 @@ export default function EditorToolbar() {
   const showLogDrawer = useEditorStore((s) => s.showLogDrawer);
   const paperRun = useEditorStore((s) => s.paperRun);
   const stopRun = useEditorStore((s) => s.stopRun);
+  const startBackground = useEditorStore((s) => s.startBackground);
+  const stopBackground = useEditorStore((s) => s.stopBackground);
   const isRunning = useEditorStore((s) => s.isRunning);
   const runIteration = useEditorStore((s) => s.runIteration);
   const runError = useEditorStore((s) => s.runError);
@@ -213,43 +215,49 @@ export default function EditorToolbar() {
       </Button>
 
       {isRunning ? (
-        <Button
-          variant="primary"
-          size="sm"
-          title="Stop strategy"
-          onClick={stopRun}
-          style={{ background: "var(--pb-risk)", borderColor: "var(--pb-risk)" }}
-        >
-          <Square size={14} />
-          Stop
-        </Button>
+        <>
+          <Button
+            variant="primary"
+            size="sm"
+            title="Stop strategy"
+            onClick={() => { stopRun(); stopBackground(); }}
+            style={{ background: "var(--pb-risk)", borderColor: "var(--pb-risk)" }}
+          >
+            <Square size={14} />
+            Stop
+          </Button>
+        </>
       ) : (
-        <Button
-          variant="primary"
-          size="sm"
-          title={
-            runMode === "live" && !canLiveTrade()
-              ? "Upgrade to Pro for live trading"
-              : runMode === "live"
-              ? "Run strategy with real orders"
-              : "Run strategy continuously (paper mode)"
-          }
-          onClick={() => {
-            if (runMode === "live" && !canLiveTrade()) {
-              setShowUpgradeHint(true);
-              setTimeout(() => setShowUpgradeHint(false), 3000);
-              return;
+        <>
+          <Button
+            variant="primary"
+            size="sm"
+            title={
+              runMode === "live" && !canLiveTrade()
+                ? "Upgrade to Pro for live trading"
+                : runMode === "live"
+                ? "Run strategy with real orders (keeps running even if you leave this page)"
+                : "Run strategy continuously (keeps running even if you leave this page)"
             }
-            paperRun();
-          }}
-          style={runMode === "live" ? { background: "var(--pb-risk)", borderColor: "var(--pb-risk)" } : {}}
-        >
-          {runMode === "live" ? <Zap size={14} /> : <Play size={14} />}
-          {runMode === "live" ? "Live Run" : "Paper Run"}
-        </Button>
+            onClick={() => {
+              if (runMode === "live" && !canLiveTrade()) {
+                setShowUpgradeHint(true);
+                setTimeout(() => setShowUpgradeHint(false), 3000);
+                return;
+              }
+              // Start server-side background execution + client-side polling
+              startBackground();
+              paperRun();
+            }}
+            style={runMode === "live" ? { background: "var(--pb-risk)", borderColor: "var(--pb-risk)" } : {}}
+          >
+            {runMode === "live" ? <Zap size={14} /> : <Play size={14} />}
+            {runMode === "live" ? "Live Run" : "Paper Run"}
+          </Button>
+        </>
       )}
 
-      {/* Browser dependency notice — visible when running */}
+      {/* Running notice */}
       {isRunning && (
         <div
           style={{
@@ -276,12 +284,10 @@ export default function EditorToolbar() {
           <Monitor size={12} color={runMode === "live" ? "#ef4444" : "#f59e0b"} />
           <span>
             <strong style={{ color: runMode === "live" ? "#ef4444" : "#f59e0b" }}>
-              Browser required
+              Running on server
             </strong>
             {" — "}
-            {runMode === "live"
-              ? "Live strategy runs in your browser. Closing this tab will stop execution and may leave open positions."
-              : "Strategy runs in your browser tab. It will stop if you close or navigate away."}
+            Strategy continues running even if you navigate away. Stop it from here or the Library page.
           </span>
         </div>
       )}

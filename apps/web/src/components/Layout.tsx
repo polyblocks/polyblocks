@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X } from "lucide-react";
+import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X, Briefcase } from "lucide-react";
 import { useAuthStore } from "../stores/authStore";
 
 export default function Layout() {
@@ -43,6 +43,13 @@ export default function Layout() {
           title="My Strategies"
         >
           <Library size={20} />
+        </NavLink>
+        <NavLink
+          to="/positions"
+          className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}
+          title="Positions & Trades"
+        >
+          <Briefcase size={20} />
         </NavLink>
         <NavLink
           to="/templates"

@@ -166,6 +166,8 @@ interface EditorState {
   stopRun: () => void;
   fireManualTrigger: () => Promise<void>;
   setRunMode: (mode: "paper" | "live") => void;
+  startBackground: () => Promise<void>;
+  stopBackground: () => Promise<void>;
 
   // Strategy library
   saveStrategy: (description?: string) => void;
@@ -615,6 +617,46 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return;
     }
     set({ runMode: mode });
+  },
+
+  // ── Background Server-Side Execution ──────────────────────────────────────
+
+  startBackground: async () => {
+    const graph = get().toStrategyGraph();
+    const issues = get().validate();
+    const hasErrors = issues.some((i) => i.severity === "error");
+    if (hasErrors) {
+      set({ runError: "Fix validation errors before running." });
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/execution/schedule/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...graph, mode: get().runMode }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { success: boolean; error?: string };
+      if (!data.success) throw new Error(data.error || "Failed to start");
+      set({ isRunning: true, runError: null });
+    } catch (err) {
+      set({ runError: err instanceof Error ? err.message : String(err) });
+    }
+  },
+
+  stopBackground: async () => {
+    const strategyId = get().strategyId;
+    try {
+      await fetch("/api/execution/schedule/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strategyId }),
+      });
+    } catch {
+      // Best effort
+    }
+    set({ isRunning: false });
   },
 
   // ── Strategy Library ──────────────────────────────────────────────────────

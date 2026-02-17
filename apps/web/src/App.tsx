@@ -10,6 +10,7 @@ import LandingPage from "./pages/LandingPage";
 import PricingPage from "./pages/PricingPage";
 import CopyTradingPage from "./pages/CopyTradingPage";
 import BacktestingPage from "./pages/BacktestingPage";
+import PositionsPage from "./pages/PositionsPage";
 import AuthCallbackPage from "./pages/AuthCallbackPage";
 import { useEffect } from "react";
 import { useAuthStore } from "./stores/authStore";
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/editor/:strategyId" element={<EditorPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/library" element={<LibraryPage />} />
+          <Route path="/positions" element={<PositionsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/copy-trading" element={<CopyTradingPage />} />

@@ -27,6 +27,7 @@ import { registerCredentialRoutes } from "./routes/credentials.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerAiRoutes } from "./routes/ai.js";
 import { registerContactRoutes } from "./routes/contact.js";
+import { registerPositionRoutes } from "./routes/positions.js";
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -55,6 +56,7 @@ async function main() {
   await app.register(registerAuthRoutes, { prefix: "/api/auth" });
   await app.register(registerAiRoutes, { prefix: "/api/ai" });
   await app.register(registerContactRoutes, { prefix: "/api/contact" });
+  await app.register(registerPositionRoutes, { prefix: "/api/positions" });
 
   // ── Health ──────────────────────────────────────────────────────────────
   app.get("/api/health", async () => ({

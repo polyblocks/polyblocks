@@ -7,12 +7,14 @@ import type {
   StrategyGraph,
   ExecutionLog,
 } from "@polyblocks/types";
+import { BlockType } from "@polyblocks/types";
 import { evaluateGraph } from "@polyblocks/engine-core";
 import type { ExecutionContext } from "@polyblocks/engine-core";
 import { nanoid } from "nanoid";
 import { createPaperHandlers } from "../engine/paperHandlers.js";
 import { createLiveHandlers } from "../engine/liveHandlers.js";
 import { getCredentials } from "./credentials.js";
+import { scheduler } from "../engine/scheduler.js";
 
 // ── In-memory execution log store ────────────────────────────────────────────
 const executionLogs = new Map<string, ExecutionLog[]>();
@@ -70,6 +72,55 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
     if (stratLogs.length > 50) stratLogs.length = 50;
 
     return { result, logs };
+  });
+
+  // ── Start a strategy as a background scheduled job ────────────────────────
+  app.post("/schedule/start", async (request) => {
+    const body = request.body as { mode?: string; intervalMs?: number } & StrategyGraph;
+    const mode = body.mode === "live" ? "live" : "paper";
+    const graph = body as StrategyGraph;
+
+    // Validate live mode has credentials
+    if (mode === "live") {
+      const creds = await getCredentials();
+      if (!creds.isConfigured) {
+        return { success: false, error: "No trading credentials configured." };
+      }
+    }
+
+    // Determine interval from graph
+    let intervalMs = body.intervalMs || 15_000;
+    for (const node of graph.nodes) {
+      if (node.type === BlockType.IntervalTrigger && node.config.intervalMs) {
+        intervalMs = Math.max(5000, Number(node.config.intervalMs));
+        break;
+      }
+    }
+
+    scheduler.start(graph, intervalMs, mode as "paper" | "live");
+    return { success: true, strategyId: graph.id, mode, intervalMs };
+  });
+
+  // ── Stop a scheduled strategy ─────────────────────────────────────────────
+  app.post("/schedule/stop", async (request) => {
+    const body = request.body as { strategyId: string };
+    scheduler.stop(body.strategyId);
+    return { success: true };
+  });
+
+  // ── Get status of a scheduled strategy ────────────────────────────────────
+  app.get<{ Params: { strategyId: string } }>(
+    "/schedule/status/:strategyId",
+    async (request) => {
+      const { strategyId } = request.params;
+      const status = scheduler.getStatus(strategyId);
+      return { running: !!status, ...status };
+    },
+  );
+
+  // ── Get all running strategies ────────────────────────────────────────────
+  app.get("/schedule/running", async () => {
+    return { strategies: scheduler.getAllRunning() };
   });
 
   // ── Get execution logs for a strategy ─────────────────────────────────────

@@ -1,13 +1,24 @@
 /**
  * LibraryPage — personal strategy library.
  * Lists all saved strategies with open / delete / rename actions.
+ * Shows a LIVE badge for strategies currently running on the server.
  */
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useEditorStore, type SavedStrategy } from "../stores/editorStore";
-import { Workflow, Trash2, FolderOpen, Clock, Layers, Pencil, Check, X } from "lucide-react";
+import { Workflow, Trash2, FolderOpen, Clock, Layers, Pencil, Check, X, Radio, Square } from "lucide-react";
 import { Button } from "@polyblocks/ui";
+
+interface RunningStrategy {
+  strategyId: string;
+  strategyName: string;
+  mode: "paper" | "live";
+  startedAt: string;
+  iteration: number;
+  intervalMs: number;
+  lastError?: string;
+}
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -21,11 +32,13 @@ function timeAgo(iso: string): string {
   return `${d}d ago`;
 }
 
-function StrategyCard({ entry, onOpen, onDelete, onRename }: {
+function StrategyCard({ entry, onOpen, onDelete, onRename, runningInfo, onStop }: {
   entry: SavedStrategy;
   onOpen: () => void;
   onDelete: () => void;
   onRename: (name: string) => void;
+  runningInfo?: RunningStrategy;
+  onStop: (strategyId: string) => void;
 }) {
   const nodeCount = entry.graph.nodes.length;
   const edgeCount = entry.graph.edges.length;
@@ -46,7 +59,7 @@ function StrategyCard({ entry, onOpen, onDelete, onRename }: {
   };
 
   return (
-    <div className="library-card">
+    <div className={`library-card ${runningInfo ? "library-card-running" : ""}`}>
       <div className="library-card-header">
         <div className="library-card-icon">
           <Workflow size={20} />
@@ -81,6 +94,12 @@ function StrategyCard({ entry, onOpen, onDelete, onRename }: {
               >
                 <Pencil size={12} />
               </button>
+              {runningInfo && (
+                <span className={`live-badge ${runningInfo.mode === "live" ? "live-badge-live" : "live-badge-paper"}`}>
+                  <Radio size={10} className="live-pulse" />
+                  {runningInfo.mode === "live" ? "LIVE" : "PAPER"}
+                </span>
+              )}
             </div>
           )}
           {entry.description && !editing && (
@@ -101,6 +120,11 @@ function StrategyCard({ entry, onOpen, onDelete, onRename }: {
           <Clock size={12} />
           {timeAgo(entry.updatedAt)}
         </span>
+        {runningInfo && (
+          <span className="library-stat" style={{ color: "var(--pb-accent)" }}>
+            Iteration #{runningInfo.iteration}
+          </span>
+        )}
       </div>
 
       <div className="library-card-actions">
@@ -108,6 +132,17 @@ function StrategyCard({ entry, onOpen, onDelete, onRename }: {
           <FolderOpen size={14} />
           Open
         </Button>
+        {runningInfo && (
+          <Button
+            size="sm"
+            onClick={() => onStop(entry.id)}
+            title="Stop running"
+            style={{ color: "#ef4444", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)" }}
+          >
+            <Square size={12} />
+            Stop
+          </Button>
+        )}
         <Button
           size="sm"
           onClick={(e: React.MouseEvent) => {
@@ -131,9 +166,29 @@ export default function LibraryPage() {
   const deleteSavedStrategy = useEditorStore((s) => s.deleteSavedStrategy);
   const renameSavedStrategy = useEditorStore((s) => s.renameSavedStrategy);
   const loadFromLibrary = useEditorStore((s) => s.loadFromLibrary);
+  const [runningMap, setRunningMap] = useState<Map<string, RunningStrategy>>(new Map());
+
+  const fetchRunning = async () => {
+    try {
+      const res = await fetch("/api/execution/schedule/running");
+      if (!res.ok) return;
+      const data = await res.json() as { strategies: RunningStrategy[] };
+      const map = new Map<string, RunningStrategy>();
+      for (const s of data.strategies) {
+        map.set(s.strategyId, s);
+      }
+      setRunningMap(map);
+    } catch {
+      // Non-critical
+    }
+  };
 
   useEffect(() => {
     loadSavedStrategies();
+    fetchRunning();
+    // Poll running status every 10s
+    const interval = setInterval(fetchRunning, 10_000);
+    return () => clearInterval(interval);
   }, [loadSavedStrategies]);
 
   const handleOpen = (id: string) => {
@@ -141,11 +196,30 @@ export default function LibraryPage() {
     navigate("/editor");
   };
 
+  const handleStop = async (strategyId: string) => {
+    try {
+      await fetch("/api/execution/schedule/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strategyId }),
+      });
+      fetchRunning();
+    } catch {
+      // Best effort
+    }
+  };
+
   return (
     <div className="dashboard">
       <div className="dashboard-hero">
         <h1>My Strategies</h1>
         <p>Your saved strategies. Open any to continue editing or run it.</p>
+        {runningMap.size > 0 && (
+          <div className="running-summary">
+            <Radio size={12} className="live-pulse" />
+            <span>{runningMap.size} strateg{runningMap.size === 1 ? "y" : "ies"} running</span>
+          </div>
+        )}
       </div>
 
       {savedStrategies.length === 0 ? (
@@ -175,6 +249,8 @@ export default function LibraryPage() {
               onOpen={() => handleOpen(entry.id)}
               onDelete={() => deleteSavedStrategy(entry.id)}
               onRename={(name) => renameSavedStrategy(entry.id, name)}
+              runningInfo={runningMap.get(entry.id)}
+              onStop={handleStop}
             />
           ))}
         </div>
