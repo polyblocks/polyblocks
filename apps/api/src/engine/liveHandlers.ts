@@ -26,15 +26,26 @@ async function createClobClientAsync(userId?: string): Promise<ClobClient> {
   const signer = new Wallet(creds.privateKey);
   const signerAddr = await signer.getAddress();
 
+  // ── Auto-fix signatureType ──────────────────────────────────────────────
+  // signatureType 1 (POLY_PROXY) means the signer is an EOA acting on behalf
+  // of a DIFFERENT proxy contract wallet (the funderAddress/maker).
+  // If funderAddress equals the signer address, there's no proxy wallet —
+  // it's a plain EOA, so signatureType MUST be 0 (EOA).
+  let signatureType = creds.signatureType;
+  const funderAddr = creds.funderAddress || signerAddr;
+
+  if (signatureType === 1 && funderAddr.toLowerCase() === signerAddr.toLowerCase()) {
+    console.log(`[LIVE] ⚠️  signatureType was 1 (POLY_PROXY) but funder === signer — auto-correcting to 0 (EOA)`);
+    signatureType = 0;
+  }
+
   // Debug: log credential details for troubleshooting (redacted secrets)
   console.log(`[LIVE] ClobClient config:`);
   console.log(`  host:          ${CLOB_HOST}`);
   console.log(`  signerAddress: ${signerAddr}`);
-  console.log(`  funderAddress: ${creds.funderAddress || "(not set — will use signer)"}`);
-  console.log(`  signatureType: ${creds.signatureType}`);
+  console.log(`  funderAddress: ${funderAddr}`);
+  console.log(`  signatureType: ${signatureType}${signatureType !== creds.signatureType ? ` (corrected from ${creds.signatureType})` : ""}`);
   console.log(`  apiKey:        ${creds.apiKey.slice(0, 8)}…${creds.apiKey.slice(-4)}`);
-  console.log(`  hasSecret:     ${creds.apiSecret.length > 0}`);
-  console.log(`  hasPassphrase: ${creds.passphrase.length > 0}`);
   console.log(`  builderConfig: ${builderConfig ? "yes" : "no"}`);
 
   return new ClobClient(
@@ -46,8 +57,8 @@ async function createClobClientAsync(userId?: string): Promise<ClobClient> {
       secret: creds.apiSecret,
       passphrase: creds.passphrase,
     },
-    creds.signatureType,
-    creds.funderAddress,
+    signatureType,
+    funderAddr,
     undefined,
     false,
     builderConfig,
