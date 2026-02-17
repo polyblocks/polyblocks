@@ -23,6 +23,8 @@ interface ScheduledStrategy {
   lastResult?: ExecutionLog;
   recentLogs: ExecutionLog[];
   lastError?: string;
+  /** Persistent state across runs — keeps cooldown timestamps, seen hashes, etc. */
+  persistentState: Map<string, unknown>;
 }
 
 /**
@@ -47,6 +49,7 @@ class StrategyScheduler {
       startedAt: new Date().toISOString(),
       iteration: 0,
       recentLogs: [],
+      persistentState: new Map(),
     };
 
     // Run immediately, then on interval
@@ -158,7 +161,9 @@ class StrategyScheduler {
       log: (nodeId, message, data) => {
         console.log(`  [${nodeId}] ${message}`, data ?? "");
       },
-      state: new Map(),
+      // Reuse persistent state across runs so dedup (UserActivity),
+      // cooldowns, and exposure tracking survive between iterations
+      state: entry.persistentState,
     };
 
     try {

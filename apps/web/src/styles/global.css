@@ -5030,6 +5030,27 @@ body {
   color: var(--pb-accent);
 }
 
+.global-running-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 2px;
+}
+
+.global-running-stop:hover {
+  background: rgba(239, 68, 68, 0.3);
+  transform: scale(1.1);
+}
+
 /* Paper badge for positions page */
 .trade-side-badge.paper {
   background: rgba(99, 102, 241, 0.12);

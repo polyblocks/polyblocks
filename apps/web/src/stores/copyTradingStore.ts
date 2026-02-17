@@ -1,6 +1,7 @@
 /**
  * Copy Trading Zustand store — persistent state that survives page navigation.
  * The polling interval runs outside React component lifecycle.
+ * Running state is persisted to localStorage so refresh shows accurate status.
  */
 
 import { create } from "zustand";
@@ -43,6 +44,49 @@ interface CopyTradingState {
   start: () => void;
   stop: () => void;
   clearTrades: () => void;
+  /** Restore running state on app init (after page refresh) */
+  restoreRunningState: () => void;
+}
+
+// ─── Persistent state helpers ───────────────────────────────────────────────
+
+const COPY_STATE_KEY = "polyblocks_copy_trading_state";
+const COPY_TRADES_KEY = "polyblocks_copy_trading_trades";
+
+interface PersistedCopyState {
+  running: boolean;
+  targetAddress: string;
+  intervalSec: number;
+  maxSize: number;
+  sizePercent: number;
+  mode: TradingMode;
+  startedAt: string | null;
+}
+
+function loadPersistedState(): PersistedCopyState | null {
+  try {
+    const raw = localStorage.getItem(COPY_STATE_KEY);
+    return raw ? JSON.parse(raw) as PersistedCopyState : null;
+  } catch { return null; }
+}
+
+function savePersistedState(state: PersistedCopyState) {
+  try { localStorage.setItem(COPY_STATE_KEY, JSON.stringify(state)); } catch { /* quota */ }
+}
+
+function clearPersistedState() {
+  try { localStorage.removeItem(COPY_STATE_KEY); } catch { /* */ }
+}
+
+function loadPersistedTrades(): CopyTrade[] {
+  try {
+    const raw = localStorage.getItem(COPY_TRADES_KEY);
+    return raw ? JSON.parse(raw) as CopyTrade[] : [];
+  } catch { return []; }
+}
+
+function savePersistedTrades(trades: CopyTrade[]) {
+  try { localStorage.setItem(COPY_TRADES_KEY, JSON.stringify(trades.slice(0, 50))); } catch { /* quota */ }
 }
 
 // Module-level timer so it survives component unmount
@@ -107,70 +151,124 @@ async function fetchAndCopy(get: () => CopyTradingState, set: (partial: Partial<
 
     const prev = get().trades;
     const modeLabel = mode === "live" ? "🔴 LIVE" : "📝 Paper";
+    const updatedTrades = [newTrade, ...prev].slice(0, 50);
     set({
-      trades: [newTrade, ...prev].slice(0, 50),
+      trades: updatedTrades,
       status: `🎯 ${modeLabel} Copied: ${side} ${outcome} "${title.slice(0, 30)}" — $${cappedSize.toFixed(2)} @ ${price.toFixed(4)}`,
     });
+    savePersistedTrades(updatedTrades);
   } catch (err) {
     set({ status: `❌ Error: ${(err as Error).message}` });
   }
 }
 
-export const useCopyTradingStore = create<CopyTradingState>((set, get) => ({
-  targetAddress: "",
-  intervalSec: 30,
-  maxSize: 50,
-  sizePercent: 100,
-  mode: "paper",
-  running: false,
-  status: null,
-  trades: [],
-  startedAt: null,
+export const useCopyTradingStore = create<CopyTradingState>((set, get) => {
+  const persisted = loadPersistedState();
+  const persistedTrades = loadPersistedTrades();
 
-  setTargetAddress: (addr) => set({ targetAddress: addr }),
-  setIntervalSec: (sec) => set({ intervalSec: sec }),
-  setMaxSize: (max) => set({ maxSize: max }),
-  setSizePercent: (pct) => set({ sizePercent: pct }),
-  setMode: (mode) => {
-    if (!get().running) set({ mode });
-  },
+  return {
+    targetAddress: persisted?.targetAddress || "",
+    intervalSec: persisted?.intervalSec || 30,
+    maxSize: persisted?.maxSize || 50,
+    sizePercent: persisted?.sizePercent || 100,
+    mode: persisted?.mode || "paper",
+    running: false, // Will be restored by restoreRunningState()
+    status: null,
+    trades: persistedTrades,
+    startedAt: persisted?.startedAt || null,
 
-  start: () => {
-    if (copyTimer) clearInterval(copyTimer);
-    isFirstFetch = true;
-    seenHashes.clear();
+    setTargetAddress: (addr) => set({ targetAddress: addr }),
+    setIntervalSec: (sec) => set({ intervalSec: sec }),
+    setMaxSize: (max) => set({ maxSize: max }),
+    setSizePercent: (pct) => set({ sizePercent: pct }),
+    setMode: (mode) => {
+      if (!get().running) set({ mode });
+    },
 
-    const { intervalSec, mode } = get();
-    set({
-      running: true,
-      startedAt: new Date().toISOString(),
-      status: `Starting copy trading in ${mode === "live" ? "LIVE" : "paper"} mode…`,
-    });
+    start: () => {
+      if (copyTimer) clearInterval(copyTimer);
+      isFirstFetch = true;
+      seenHashes.clear();
 
-    // Run immediately, then on interval
-    fetchAndCopy(get, (partial) => set(partial));
-    copyTimer = setInterval(() => {
-      if (get().running) {
-        fetchAndCopy(get, (partial) => set(partial));
+      const { intervalSec, mode, targetAddress, maxSize, sizePercent } = get();
+      const startedAt = new Date().toISOString();
+      set({
+        running: true,
+        startedAt,
+        status: `Starting copy trading in ${mode === "live" ? "LIVE" : "paper"} mode…`,
+      });
+
+      // Persist running state
+      savePersistedState({
+        running: true,
+        targetAddress,
+        intervalSec,
+        maxSize,
+        sizePercent,
+        mode,
+        startedAt,
+      });
+
+      // Run immediately, then on interval
+      fetchAndCopy(get, (partial) => set(partial));
+      copyTimer = setInterval(() => {
+        if (get().running) {
+          fetchAndCopy(get, (partial) => set(partial));
+        }
+      }, intervalSec * 1000);
+    },
+
+    stop: () => {
+      if (copyTimer) {
+        clearInterval(copyTimer);
+        copyTimer = null;
       }
-    }, intervalSec * 1000);
-  },
+      set({ running: false, status: "Copy trading stopped" });
+      clearPersistedState();
+    },
 
-  stop: () => {
-    if (copyTimer) {
-      clearInterval(copyTimer);
-      copyTimer = null;
-    }
-    set({ running: false, status: "Copy trading stopped" });
-  },
+    clearTrades: () => {
+      if (copyTimer) {
+        clearInterval(copyTimer);
+        copyTimer = null;
+      }
+      seenHashes.clear();
+      isFirstFetch = true;
+      set({ running: false, trades: [], status: "⛔ All trades closed and log cleared" });
+      clearPersistedState();
+      savePersistedTrades([]);
+    },
 
-  clearTrades: () => {
-    if (copyTimer) {
-      clearInterval(copyTimer);
-      copyTimer = null;
-    }
-    seenHashes.clear();
-    isFirstFetch = true;
-    set({ running: false, trades: [], status: "⛔ All trades closed and log cleared" });
-  },
-}));
+    restoreRunningState: () => {
+      const saved = loadPersistedState();
+      if (!saved?.running) return;
+
+      // Restore config from persisted state
+      set({
+        targetAddress: saved.targetAddress,
+        intervalSec: saved.intervalSec,
+        maxSize: saved.maxSize,
+        sizePercent: saved.sizePercent,
+        mode: saved.mode,
+        startedAt: saved.startedAt,
+      });
+
+      // Restart the polling timer
+      if (copyTimer) clearInterval(copyTimer);
+      isFirstFetch = true;
+      seenHashes.clear();
+
+      set({
+        running: true,
+        status: `Restored copy trading (${saved.mode === "live" ? "LIVE" : "paper"} mode)…`,
+      });
+
+      fetchAndCopy(get, (partial) => set(partial));
+      copyTimer = setInterval(() => {
+        if (get().running) {
+          fetchAndCopy(get, (partial) => set(partial));
+        }
+      }, saved.intervalSec * 1000);
+    },
+  };
+});

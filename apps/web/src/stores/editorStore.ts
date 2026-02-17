@@ -463,108 +463,138 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
     }
 
-    // Continuous loop
+    // ── Poll for server-side results instead of executing orders client-side.
+    // The server scheduler (startBackground) handles actual execution.
+    // This loop just fetches results for display.
+    let lastIteration = -1;
     while (!signal.aborted) {
       try {
-        const currentGraph = get().toStrategyGraph();
-        const res = await fetch("/api/execution/run", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...currentGraph, mode: get().runMode }),
-          signal,
-        });
-
+        const res = await fetch(`/api/execution/schedule/status/${graph.id}`, { signal });
         if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`API error ${res.status}: ${text}`);
+          // Strategy might have been stopped server-side
+          break;
+        }
+        const data = await res.json() as {
+          running: boolean;
+          iteration?: number;
+          lastResult?: ExecutionLog;
+          lastError?: string;
+        };
+
+        if (!data.running) {
+          // Server stopped this strategy — stop client too
+          break;
         }
 
-        const data = await res.json() as { result: ExecutionLog; logs: Array<{ nodeId: string; message: string; data?: unknown }> };
-        get().addLog(data.result);
-        set({ runIteration: get().runIteration + 1 });
+        if (data.iteration !== undefined && data.iteration !== lastIteration) {
+          lastIteration = data.iteration;
+          set({ runIteration: data.iteration });
 
-        // Extract paper trades from PlaceOrder node results
-        const newTrades: PaperTrade[] = [];
-        for (const nr of data.result.nodeResults) {
-          if (nr.status !== "completed" || !nr.output) continue;
-          const order = nr.output.order as {
-            id?: string;
-            side?: string;
-            price?: number;
-            size?: number;
-            tokenId?: string;
-            conditionId?: string;
-            filled?: boolean;
-          } | undefined;
-          if (!order) continue;
+          // Fetch recent logs from the scheduler
+          const logsRes = await fetch(`/api/execution/schedule/logs/${graph.id}`, { signal });
+          if (logsRes.ok) {
+            const logsData = await logsRes.json() as { logs: ExecutionLog[] };
+            if (logsData.logs.length > 0) {
+              // Only add NEW logs we haven't seen
+              const existing = get().logs;
+              const existingIds = new Set(existing.map((l) => l.id));
+              const newLogs = logsData.logs.filter((l) => !existingIds.has(l.id));
+              if (newLogs.length > 0) {
+                for (const log of newLogs) {
+                  get().addLog(log);
+                }
+                // Extract trades from new logs
+                const newTrades: PaperTrade[] = [];
+                for (const log of newLogs) {
+                  for (const nr of log.nodeResults) {
+                    if (nr.status !== "completed" || !nr.output) continue;
+                    const order = nr.output.order as {
+                      id?: string;
+                      side?: string;
+                      price?: number;
+                      size?: number;
+                      tokenId?: string;
+                      conditionId?: string;
+                      filled?: boolean;
+                    } | undefined;
+                    if (!order) continue;
 
-          newTrades.push({
-            id: order.id || `t_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            strategyId: currentGraph.id,
-            marketConditionId: String(order.conditionId || ""),
-            tokenId: String(order.tokenId || ""),
-            side: (order.side as "BUY" | "SELL") || "BUY",
-            price: order.price || 0,
-            size: order.size || 0,
-            executedAt: new Date().toISOString(),
-            originNodeId: nr.nodeId,
-          });
-        }
+                    newTrades.push({
+                      id: order.id || `t_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                      strategyId: graph.id,
+                      marketConditionId: String(order.conditionId || ""),
+                      tokenId: String(order.tokenId || ""),
+                      side: (order.side as "BUY" | "SELL") || "BUY",
+                      price: order.price || 0,
+                      size: order.size || 0,
+                      executedAt: new Date().toISOString(),
+                      originNodeId: nr.nodeId,
+                    });
+                  }
+                }
 
-        if (newTrades.length > 0) {
-          const prevTrades = get().trades;
-          const allTrades = [...newTrades, ...prevTrades].slice(0, 500);
+                if (newTrades.length > 0) {
+                  const prevTrades = get().trades;
+                  const allTrades = [...newTrades, ...prevTrades].slice(0, 500);
 
-          // Build positions from all trades
-          const posMap = new Map<string, PaperPosition>();
-          for (const t of [...allTrades].reverse()) {
-            const key = `${t.marketConditionId}_${t.tokenId}`;
-            const existing = posMap.get(key);
-            const sizeChange = t.side === "BUY" ? t.size : -t.size;
+                  // Build positions from all trades
+                  const posMap = new Map<string, PaperPosition>();
+                  for (const t of [...allTrades].reverse()) {
+                    const key = `${t.marketConditionId}_${t.tokenId}`;
+                    const existing = posMap.get(key);
+                    const sizeChange = t.side === "BUY" ? t.size : -t.size;
 
-            if (existing) {
-              const newSize = existing.size + sizeChange;
-              if (Math.abs(newSize) < 0.001) {
-                posMap.delete(key);
-              } else {
-                existing.size = newSize;
-                existing.avgEntryPrice = (existing.avgEntryPrice + t.price) / 2;
+                    if (existing) {
+                      const newSize = existing.size + sizeChange;
+                      if (Math.abs(newSize) < 0.001) {
+                        posMap.delete(key);
+                      } else {
+                        existing.size = newSize;
+                        existing.avgEntryPrice = (existing.avgEntryPrice + t.price) / 2;
+                      }
+                    } else if (sizeChange > 0) {
+                      posMap.set(key, {
+                        strategyId: t.strategyId,
+                        marketConditionId: t.marketConditionId,
+                        tokenId: t.tokenId,
+                        side: t.side === "BUY" ? "YES" : "NO",
+                        size: sizeChange,
+                        avgEntryPrice: t.price,
+                        currentPrice: t.price,
+                        unrealizedPnl: 0,
+                        openedAt: t.executedAt,
+                      });
+                    }
+                  }
+
+                  const positionsArr = Array.from(posMap.values());
+                  set({
+                    trades: allTrades,
+                    positions: positionsArr,
+                    showTradesPanel: true,
+                    bottomTab: "trades",
+                  });
+                  saveTradesToStorage(allTrades);
+                  savePositionsToStorage(positionsArr);
+                }
               }
-            } else if (sizeChange > 0) {
-              posMap.set(key, {
-                strategyId: t.strategyId,
-                marketConditionId: t.marketConditionId,
-                tokenId: t.tokenId,
-                side: t.side === "BUY" ? "YES" : "NO",
-                size: sizeChange,
-                avgEntryPrice: t.price,
-                currentPrice: t.price,
-                unrealizedPnl: 0,
-                openedAt: t.executedAt,
-              });
             }
           }
-
-          const positionsArr = Array.from(posMap.values());
-          set({
-            trades: allTrades,
-            positions: positionsArr,
-            showTradesPanel: true,
-            bottomTab: "trades",
-          });
-          saveTradesToStorage(allTrades);
-          savePositionsToStorage(positionsArr);
         }
 
-        // Wait for interval before next iteration
+        if (data.lastError) {
+          set({ runError: data.lastError });
+        }
+
+        // Wait before next poll
         if (!signal.aborted) {
           await new Promise<void>((resolve) => {
-            const timer = setTimeout(resolve, intervalMs);
+            const timer = setTimeout(resolve, Math.max(5000, intervalMs));
             signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
           });
         }
       } catch (err) {
-        if (signal.aborted) break; // User stopped — not an error
+        if (signal.aborted) break;
         set({ runError: err instanceof Error ? err.message : String(err) });
         break;
       }
@@ -583,6 +613,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   fireManualTrigger: async () => {
+    // Prevent manual trigger while strategy is already running on the server
+    if (get().isRunning) {
+      set({ runError: "Strategy is already running. Stop it before firing manually." });
+      return;
+    }
+
     const graph = get().toStrategyGraph();
     const issues = get().validate();
     const hasErrors = issues.some((i) => i.severity === "error");
@@ -666,6 +702,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   // ── Background Server-Side Execution ──────────────────────────────────────
 
   startBackground: async () => {
+    // Prevent double-start
+    if (get().isRunning) return;
+
     const graph = get().toStrategyGraph();
     const issues = get().validate();
     const hasErrors = issues.some((i) => i.severity === "error");
@@ -683,7 +722,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as { success: boolean; error?: string };
       if (!data.success) throw new Error(data.error || "Failed to start");
-      set({ isRunning: true, runError: null });
+      set({ isRunning: true, runError: null, showLogDrawer: true });
+
+      // Start client-side polling loop to fetch logs from the server
+      get().paperRun();
     } catch (err) {
       set({ runError: err instanceof Error ? err.message : String(err) });
     }
@@ -691,6 +733,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   stopBackground: async () => {
     const strategyId = get().strategyId;
+    // Stop client-side polling first
+    if (runAbortController) {
+      runAbortController.abort();
+      runAbortController = null;
+    }
+    // Stop server-side scheduler
     try {
       await fetch("/api/execution/schedule/stop", {
         method: "POST",

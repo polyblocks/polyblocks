@@ -32,7 +32,6 @@ export default function EditorToolbar() {
   const importJson = useEditorStore((s) => s.importJson);
   const toggleLogDrawer = useEditorStore((s) => s.toggleLogDrawer);
   const showLogDrawer = useEditorStore((s) => s.showLogDrawer);
-  const paperRun = useEditorStore((s) => s.paperRun);
   const stopRun = useEditorStore((s) => s.stopRun);
   const startBackground = useEditorStore((s) => s.startBackground);
   const stopBackground = useEditorStore((s) => s.stopBackground);
@@ -245,9 +244,12 @@ export default function EditorToolbar() {
                 setTimeout(() => setShowUpgradeHint(false), 3000);
                 return;
               }
-              // Start server-side background execution + client-side polling
+              // Server-side execution only — never double-execute.
+              // startBackground() handles scheduling on the server;
+              // paperRun() handles client-side polling for log display.
+              // IMPORTANT: only ONE of them should place orders.
+              // We use server-side scheduling only and paperRun just polls.
               startBackground();
-              paperRun();
             }}
             style={runMode === "live" ? { background: "var(--pb-risk)", borderColor: "var(--pb-risk)" } : {}}
           >

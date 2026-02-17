@@ -34,11 +34,39 @@ export default function EditorPage() {
   const selectedEdgeId = useEditorStore((s) => s.selectedEdgeId);
   const showLogDrawer = useEditorStore((s) => s.showLogDrawer);
   const showPropertiesPanel = useEditorStore((s) => s.showPropertiesPanel);
+  const strategyId = useEditorStore((s) => s.strategyId);
+  const isRunning = useEditorStore((s) => s.isRunning);
+  const paperRun = useEditorStore((s) => s.paperRun);
 
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
 
   // Edge context menu state
   const [edgeMenu, setEdgeMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
+
+  // ── Sync running state from server on mount ─────────────────────────────
+  // If the strategy was running before a page refresh, restore polling
+  useEffect(() => {
+    if (isRunning) return; // Already running client-side
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/execution/schedule/status/${strategyId}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json() as { running: boolean; mode?: string; iteration?: number };
+        if (data.running && !cancelled) {
+          // Strategy is running on the server — restore client-side polling
+          useEditorStore.setState({
+            isRunning: true,
+            runMode: (data.mode as "paper" | "live") || "paper",
+            runIteration: data.iteration || 0,
+            showLogDrawer: true,
+          });
+          paperRun(); // Start the polling loop
+        }
+      } catch { /* server not reachable — ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [strategyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onDragOver = useCallback((event: DragEvent) => {
     event.preventDefault();

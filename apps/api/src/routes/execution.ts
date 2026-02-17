@@ -28,6 +28,24 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
     const graph = body as StrategyGraph;
     const runId = nanoid();
 
+    // ── Safety guard: prevent duplicate execution ─────────────────────────
+    // If this strategy is already running on the server scheduler, reject
+    // the manual /run request to prevent double order placement.
+    if (scheduler.isScheduled(graph.id)) {
+      return {
+        result: {
+          id: runId,
+          strategyId: graph.id,
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          status: "failed",
+          nodeResults: [],
+          summary: "Strategy is already running on the server. Stop it first to run manually.",
+        },
+        logs: [],
+      };
+    }
+
     // Validate live mode has credentials
     if (mode === "live") {
       const creds = await getCredentials();
@@ -115,6 +133,16 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
       const { strategyId } = request.params;
       const status = scheduler.getStatus(strategyId);
       return { running: !!status, ...status };
+    },
+  );
+
+  // ── Get recent logs for a scheduled strategy ──────────────────────────────
+  app.get<{ Params: { strategyId: string } }>(
+    "/schedule/logs/:strategyId",
+    async (request) => {
+      const { strategyId } = request.params;
+      const logs = scheduler.getRecentLogs(strategyId);
+      return { logs };
     },
   );
 

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X, Briefcase, Radio, Loader2 } from "lucide-react";
+import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X, Briefcase, Radio, Loader2, Square } from "lucide-react";
 import { useAuthStore } from "../stores/authStore";
 import { useCopyTradingStore } from "../stores/copyTradingStore";
 
@@ -17,24 +17,44 @@ export default function Layout() {
   const copyRunning = useCopyTradingStore((s) => s.running);
   const copyMode = useCopyTradingStore((s) => s.mode);
   const copyTarget = useCopyTradingStore((s) => s.targetAddress);
+  const restoreCopyTrading = useCopyTradingStore((s) => s.restoreRunningState);
+  const copyStop = useCopyTradingStore((s) => s.stop);
   const [runningStrategies, setRunningStrategies] = useState<RunningStrategy[]>([]);
+
+  // Restore copy trading state on mount (survives page refresh)
+  useEffect(() => {
+    restoreCopyTrading();
+  }, [restoreCopyTrading]);
+
+  const handleStopStrategy = useCallback(async (strategyId: string) => {
+    try {
+      await fetch("/api/execution/schedule/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strategyId }),
+      });
+      // Immediately refresh the list
+      fetchRunning();
+    } catch { /* best effort */ }
+  }, []);
+
+  const fetchRunning = useCallback(async () => {
+    try {
+      const res = await fetch("/api/execution/schedule/running");
+      if (res.ok) {
+        const data = await res.json();
+        setRunningStrategies(data.strategies || data.running || []);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // Poll for running strategies
   useEffect(() => {
     let mounted = true;
-    const poll = async () => {
-      try {
-        const res = await fetch("/api/execution/schedule/running");
-        if (res.ok) {
-          const data = await res.json();
-          if (mounted) setRunningStrategies(data.strategies || data.running || []);
-        }
-      } catch { /* ignore */ }
-    };
-    poll();
-    const iv = setInterval(poll, 10_000);
+    fetchRunning();
+    const iv = setInterval(() => { if (mounted) fetchRunning(); }, 10_000);
     return () => { mounted = false; clearInterval(iv); };
-  }, []);
+  }, [fetchRunning]);
 
   const totalRunning = runningStrategies.length + (copyRunning ? 1 : 0);
   const showGlobalBar = totalRunning > 0;
@@ -228,6 +248,13 @@ export default function Layout() {
                   <span className={`global-running-mode ${rs.mode}`}>
                     {rs.mode === "live" ? "LIVE" : "PAPER"}
                   </span>
+                  <button
+                    className="global-running-stop"
+                    onClick={() => handleStopStrategy(rs.strategyId)}
+                    title={`Stop ${rs.strategyName || "strategy"}`}
+                  >
+                    <Square size={8} />
+                  </button>
                 </span>
               ))}
               {copyRunning && (
@@ -240,6 +267,13 @@ export default function Layout() {
                   <span className={`global-running-mode ${copyMode}`}>
                     {copyMode === "live" ? "LIVE" : "PAPER"}
                   </span>
+                  <button
+                    className="global-running-stop"
+                    onClick={() => copyStop()}
+                    title="Stop copy trading"
+                  >
+                    <Square size={8} />
+                  </button>
                 </span>
               )}
             </span>
