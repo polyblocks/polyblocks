@@ -4895,8 +4895,8 @@ body {
 }
 
 .library-card-running {
-  border-color: rgba(239, 68, 68, 0.3) !important;
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.1);
+  border-color: rgba(16, 185, 129, 0.3) !important;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.1);
 }
 
 .running-summary {

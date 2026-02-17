@@ -48,6 +48,45 @@ function saveLibraryToStorage(lib: SavedStrategy[]) {
   localStorage.setItem(LIBRARY_KEY, JSON.stringify(lib));
 }
 
+// ─── Persistent Trades & Logs ───────────────────────────────────────────────
+
+const TRADES_KEY = "polyblocks_trades";
+const LOGS_KEY = "polyblocks_logs";
+const POSITIONS_KEY = "polyblocks_positions";
+
+function loadTradesFromStorage(): PaperTrade[] {
+  try {
+    const raw = localStorage.getItem(TRADES_KEY);
+    return raw ? (JSON.parse(raw) as PaperTrade[]) : [];
+  } catch { return []; }
+}
+
+function loadLogsFromStorage(): ExecutionLog[] {
+  try {
+    const raw = localStorage.getItem(LOGS_KEY);
+    return raw ? (JSON.parse(raw) as ExecutionLog[]) : [];
+  } catch { return []; }
+}
+
+function loadPositionsFromStorage(): PaperPosition[] {
+  try {
+    const raw = localStorage.getItem(POSITIONS_KEY);
+    return raw ? (JSON.parse(raw) as PaperPosition[]) : [];
+  } catch { return []; }
+}
+
+function saveTradesToStorage(trades: PaperTrade[]) {
+  try { localStorage.setItem(TRADES_KEY, JSON.stringify(trades.slice(0, 500))); } catch { /* quota */ }
+}
+
+function saveLogsToStorage(logs: ExecutionLog[]) {
+  try { localStorage.setItem(LOGS_KEY, JSON.stringify(logs.slice(-100))); } catch { /* quota */ }
+}
+
+function savePositionsToStorage(positions: PaperPosition[]) {
+  try { localStorage.setItem(POSITIONS_KEY, JSON.stringify(positions)); } catch { /* quota */ }
+}
+
 // Persistent abort controller for continuous run
 let runAbortController: AbortController | null = null;
 
@@ -198,9 +237,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selectedNodeId: null,
 
   validationIssues: [],
-  logs: [],
-  trades: [],
-  positions: [],
+  logs: loadLogsFromStorage(),
+  trades: loadTradesFromStorage(),
+  positions: loadPositionsFromStorage(),
   showLogDrawer: false,
   showPropertiesPanel: true,
   showTradesPanel: false,
@@ -360,6 +399,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       edges: graph.edges.map(strategyEdgeToFlow),
       selectedNodeId: null,
       validationIssues: [],
+      // NOTE: logs, trades, positions are intentionally NOT cleared here.
+      // They persist until the user explicitly clicks the trash button.
     });
   },
 
@@ -372,9 +413,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       edges: [],
       selectedNodeId: null,
       validationIssues: [],
-      logs: [],
-      trades: [],
-      positions: [],
+      // NOTE: logs, trades, positions are intentionally NOT cleared here.
+      // They persist until the user explicitly clicks the trash button.
     });
   },
 
@@ -505,12 +545,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             }
           }
 
+          const positionsArr = Array.from(posMap.values());
           set({
             trades: allTrades,
-            positions: Array.from(posMap.values()),
+            positions: positionsArr,
             showTradesPanel: true,
             bottomTab: "trades",
           });
+          saveTradesToStorage(allTrades);
+          savePositionsToStorage(positionsArr);
         }
 
         // Wait for interval before next iteration
@@ -596,6 +639,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (newTrades.length > 0) {
         const allTrades = [...newTrades, ...get().trades].slice(0, 500);
         set({ trades: allTrades, bottomTab: "trades" });
+        saveTradesToStorage(allTrades);
       }
     } catch (err) {
       set({ runError: err instanceof Error ? err.message : String(err) });
@@ -715,11 +759,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   // ── Logs ──────────────────────────────────────────────────────────────────
 
   addLog: (log) => {
-    set({ logs: [...get().logs, log].slice(-100) });
+    const logs = [...get().logs, log].slice(-100);
+    set({ logs });
+    saveLogsToStorage(logs);
   },
 
   clearLogs: () => {
     set({ logs: [] });
+    saveLogsToStorage([]);
   },
 
   toggleLogDrawer: () => {
@@ -740,5 +787,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   clearTrades: () => {
     set({ trades: [], positions: [] });
+    saveTradesToStorage([]);
+    savePositionsToStorage([]);
   },
 }));

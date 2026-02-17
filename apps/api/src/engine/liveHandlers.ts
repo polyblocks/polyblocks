@@ -77,6 +77,7 @@ async function createClobClientAsync(userId?: string): Promise<ClobClient> {
 
 const livePlaceOrderHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
+    const t0 = Date.now();
     const market = inputs.market as {
       clobTokenIds?: string[];
       conditionId?: string;
@@ -109,7 +110,8 @@ const livePlaceOrderHandler: NodeHandler = {
     );
 
     const client = await createClobClientAsync();
-    ctx.log(node.id, `🔑 tokenId: ${tokenId}`);
+    const clientReady = Date.now() - t0;
+    ctx.log(node.id, `🔑 Client ready in ${clientReady}ms | tokenId: ${tokenId}`);
     ctx.log(node.id, `🔑 CLOB_HOST: ${CLOB_HOST}`);
 
     try {
@@ -167,13 +169,14 @@ const livePlaceOrderHandler: NodeHandler = {
       const filled = status === "matched" || status === "filled";
 
       const statusEmoji = filled ? "✅" : "⚠️";
+      const totalMs = Date.now() - t0;
       const statusLabel = filled
         ? `FILLED` + (response.takingAmount ? ` — received ${response.takingAmount} shares` : "")
         : `${rawStatus ?? "unknown"}` + (orderTypeStr === "FOK" ? " (order killed — no full fill available at this size)" : " (partial fill — remainder killed)");
 
       ctx.log(
         node.id,
-        `${statusEmoji} LIVE MARKET ORDER — ID: ${response.orderID}, Status: ${statusLabel}`,
+        `${statusEmoji} LIVE MARKET ORDER — ID: ${response.orderID}, Status: ${statusLabel} [${totalMs}ms total]`,
       );
 
       if (response.transactionsHashes?.length) {

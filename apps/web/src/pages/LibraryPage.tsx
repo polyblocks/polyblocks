@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useEditorStore, type SavedStrategy } from "../stores/editorStore";
-import { Workflow, Trash2, FolderOpen, Clock, Layers, Pencil, Check, X, Radio, Square } from "lucide-react";
+import { Workflow, Trash2, FolderOpen, Clock, Layers, Pencil, Check, X, Radio, Square, FileText } from "lucide-react";
 import { Button } from "@polyblocks/ui";
 
 interface RunningStrategy {
@@ -96,7 +96,11 @@ function StrategyCard({ entry, onOpen, onDelete, onRename, runningInfo, onStop }
               </button>
               {runningInfo && (
                 <span className={`live-badge ${runningInfo.mode === "live" ? "live-badge-live" : "live-badge-paper"}`}>
-                  <Radio size={10} className="live-pulse" />
+                  {runningInfo.mode === "live" ? (
+                    <Radio size={10} className="live-pulse" />
+                  ) : (
+                    <FileText size={10} className="live-pulse" />
+                  )}
                   {runningInfo.mode === "live" ? "LIVE" : "PAPER"}
                 </span>
               )}
@@ -166,6 +170,10 @@ export default function LibraryPage() {
   const deleteSavedStrategy = useEditorStore((s) => s.deleteSavedStrategy);
   const renameSavedStrategy = useEditorStore((s) => s.renameSavedStrategy);
   const loadFromLibrary = useEditorStore((s) => s.loadFromLibrary);
+  const editorIsRunning = useEditorStore((s) => s.isRunning);
+  const editorRunMode = useEditorStore((s) => s.runMode);
+  const editorStrategyId = useEditorStore((s) => s.strategyId);
+  const editorIteration = useEditorStore((s) => s.runIteration);
   const [runningMap, setRunningMap] = useState<Map<string, RunningStrategy>>(new Map());
 
   const fetchRunning = async () => {
@@ -191,6 +199,21 @@ export default function LibraryPage() {
     return () => clearInterval(interval);
   }, [loadSavedStrategies]);
 
+  // Merge server-scheduled running strategies with in-browser paper run
+  const combinedMap = new Map(runningMap);
+  if (editorIsRunning && !combinedMap.has(editorStrategyId)) {
+    combinedMap.set(editorStrategyId, {
+      strategyId: editorStrategyId,
+      strategyName: "",
+      mode: editorRunMode,
+      startedAt: new Date().toISOString(),
+      iteration: editorIteration,
+      intervalMs: 0,
+    });
+  }
+
+  const totalRunning = combinedMap.size;
+
   const handleOpen = (id: string) => {
     loadFromLibrary(id);
     navigate("/editor");
@@ -214,10 +237,10 @@ export default function LibraryPage() {
       <div className="dashboard-hero">
         <h1>My Strategies</h1>
         <p>Your saved strategies. Open any to continue editing or run it.</p>
-        {runningMap.size > 0 && (
+        {totalRunning > 0 && (
           <div className="running-summary">
             <Radio size={12} className="live-pulse" />
-            <span>{runningMap.size} strateg{runningMap.size === 1 ? "y" : "ies"} running</span>
+            <span>{totalRunning} strateg{totalRunning === 1 ? "y" : "ies"} running</span>
           </div>
         )}
       </div>
@@ -249,7 +272,7 @@ export default function LibraryPage() {
               onOpen={() => handleOpen(entry.id)}
               onDelete={() => deleteSavedStrategy(entry.id)}
               onRename={(name) => renameSavedStrategy(entry.id, name)}
-              runningInfo={runningMap.get(entry.id)}
+              runningInfo={combinedMap.get(entry.id)}
               onStop={handleStop}
             />
           ))}

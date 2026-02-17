@@ -48,6 +48,24 @@ async function fetchJson(url: string): Promise<unknown> {
   return res.json();
 }
 
+// ─── Market Data Cache ──────────────────────────────────────────────────────
+// Prevents re-fetching the same market data on every poll iteration.
+// Cache entries expire after 60 seconds so price/metadata stays fresh.
+
+const marketCache = new Map<string, { data: unknown; fetchedAt: number }>();
+const MARKET_CACHE_TTL_MS = 60_000; // 60s
+
+async function fetchMarketCached(conditionId: string): Promise<unknown> {
+  const now = Date.now();
+  const cached = marketCache.get(conditionId);
+  if (cached && (now - cached.fetchedAt) < MARKET_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  const data = await fetchJson(`${CLOB_HOST}/markets/${conditionId}`);
+  marketCache.set(conditionId, { data, fetchedAt: now });
+  return data;
+}
+
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
 const intervalTriggerHandler: NodeHandler = {
@@ -91,12 +109,12 @@ const marketSelectorHandler: NodeHandler = {
       throw new Error("No market selected — open the Market Selector node and pick a market.");
     }
 
-    ctx.log(node.id, `Fetching market: ${conditionId}`);
-
-    // Fetch market data from CLOB
+    // Use cache to avoid re-fetching on every poll iteration
+    const t0 = Date.now();
     try {
-      const market = await fetchJson(`${CLOB_HOST}/markets/${conditionId}`);
-      ctx.log(node.id, `✅ Selected market: ${conditionId}`);
+      const market = await fetchMarketCached(conditionId);
+      const elapsed = Date.now() - t0;
+      ctx.log(node.id, `✅ Market loaded: ${conditionId} (${elapsed}ms${elapsed < 5 ? " — cached" : ""})`);
       return { market };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -326,6 +344,7 @@ const killSwitchHandler: NodeHandler = {
 
 const placeOrderHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
+    const t0 = Date.now();
     const market = inputs.market as { clobTokenIds?: string[]; conditionId?: string } | undefined;
     // Side can come from input port (e.g. UserActivity) or fall back to config
     const side = inputs.side ? String(inputs.side) : String(node.config.side || "BUY");
@@ -377,9 +396,10 @@ const placeOrderHandler: NodeHandler = {
       timestamp: Date.now(),
     };
 
+    const elapsed = Date.now() - t0;
     ctx.log(
       node.id,
-      `📝 PAPER ${side} ${outcome} | ${shares.toFixed(2)} shares @ $${fillPrice.toFixed(3)} ($${sizeUsd})`,
+      `📝 PAPER ${side} ${outcome} | ${shares.toFixed(2)} shares @ $${fillPrice.toFixed(3)} ($${sizeUsd}) [${elapsed}ms]`,
     );
 
     return { orderId: paperOrder.id, filled: true };

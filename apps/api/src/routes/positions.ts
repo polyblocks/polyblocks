@@ -127,27 +127,36 @@ export async function registerPositionRoutes(app: FastifyInstance) {
       console.log(`[Positions] Got ${rawPositions.length} positions`);
 
       // Data API already includes title, slug, icon, outcome directly
-      const positions = rawPositions.map((p) => ({
-        conditionId: String(p.conditionId || ""),
-        asset: String(p.asset || ""),
-        size: Number(p.size || 0),
-        avgPrice: Number(p.avgPrice || 0),
-        currentPrice: Number(p.curPrice || 0),
-        initialValue: Number(p.initialValue || 0),
-        currentValue: Number(p.currentValue || 0),
-        cashPnl: Number(p.cashPnl || 0),
-        percentPnl: Number(p.percentPnl || 0),
-        realizedPnl: Number(p.realizedPnl || 0),
-        side: String(p.outcome || ""),
-        outcomeIndex: Number(p.outcomeIndex ?? 0),
-        question: String(p.title || ""),
-        slug: String(p.eventSlug || p.slug || ""),
-        image: String(p.icon || ""),
-        redeemable: Boolean(p.redeemable),
-        mergeable: Boolean(p.mergeable),
-        negativeRisk: Boolean(p.negativeRisk),
-        endDate: String(p.endDate || ""),
-      }));
+      const positions = rawPositions
+        .map((p) => ({
+          conditionId: String(p.conditionId || ""),
+          asset: String(p.asset || ""),
+          size: Number(p.size || 0),
+          avgPrice: Number(p.avgPrice || 0),
+          currentPrice: Number(p.curPrice || 0),
+          initialValue: Number(p.initialValue || 0),
+          currentValue: Number(p.currentValue || 0),
+          cashPnl: Number(p.cashPnl || 0),
+          percentPnl: Number(p.percentPnl || 0),
+          realizedPnl: Number(p.realizedPnl || 0),
+          side: String(p.outcome || ""),
+          outcomeIndex: Number(p.outcomeIndex ?? 0),
+          question: String(p.title || ""),
+          slug: String(p.eventSlug || p.slug || ""),
+          image: String(p.icon || ""),
+          redeemable: Boolean(p.redeemable),
+          mergeable: Boolean(p.mergeable),
+          negativeRisk: Boolean(p.negativeRisk),
+          endDate: String(p.endDate || ""),
+        }))
+        // Filter out dust positions (<0.01 shares), redeemable (market resolved), and
+        // positions with zero current value (already effectively closed)
+        .filter((p) => {
+          if (p.size < 0.01) return false;           // Dust
+          if (p.redeemable) return false;             // Market resolved — position is closed
+          if (p.currentValue <= 0 && p.size < 0.1) return false; // Effectively worthless dust
+          return true;
+        });
 
       return { positions };
     } catch (err) {

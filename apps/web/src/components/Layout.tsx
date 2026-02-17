@@ -27,7 +27,7 @@ export default function Layout() {
         const res = await fetch("/api/execution/schedule/running");
         if (res.ok) {
           const data = await res.json();
-          if (mounted) setRunningStrategies(data.running || []);
+          if (mounted) setRunningStrategies(data.strategies || data.running || []);
         }
       } catch { /* ignore */ }
     };
