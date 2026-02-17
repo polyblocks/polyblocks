@@ -47,6 +47,10 @@ interface Trade {
   status: string;
   timestamp: string;
   txHash: string;
+  question: string;
+  outcome: string;
+  slug: string;
+  icon: string;
 }
 
 function formatUsd(value: number): string {
@@ -332,31 +336,40 @@ export default function PositionsPage() {
             <thead>
               <tr>
                 <th>Time</th>
+                <th>Market</th>
                 <th>Side</th>
+                <th>Outcome</th>
                 <th>Price</th>
                 <th>Size</th>
                 <th>Value</th>
-                <th>Fee</th>
-                <th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {trades.map((t) => (
-                <tr key={t.id} className={`trade-row trade-${t.side.toLowerCase()}`}>
+              {trades.map((t, i) => (
+                <tr key={t.id || i} className={`trade-row trade-${t.side.toLowerCase()}`}>
                   <td className="trade-time">{t.timestamp ? timeAgo(t.timestamp) : "—"}</td>
+                  <td style={{ maxWidth: 220 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {t.icon && <img src={t.icon} alt="" style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0 }} />}
+                      <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {t.question || t.conditionId.slice(0, 10) + "…"}
+                      </span>
+                    </div>
+                  </td>
                   <td>
                     <span className={`trade-side-badge ${t.side.toLowerCase()}`}>
                       {t.side === "BUY" ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
                       {t.side}
                     </span>
                   </td>
+                  <td>
+                    <span className={`trade-side-badge ${t.outcome.toLowerCase()}`}>
+                      {t.outcome}
+                    </span>
+                  </td>
                   <td className="trade-price">{formatUsd(t.price)}</td>
                   <td>{t.size.toFixed(2)}</td>
                   <td className="trade-value">{formatUsd(t.price * t.size)}</td>
-                  <td style={{ color: "var(--pb-text-muted)" }}>{formatUsd(t.fee)}</td>
-                  <td>
-                    <span style={{ fontSize: 11, color: "var(--pb-text-muted)" }}>{t.status}</span>
-                  </td>
                 </tr>
               ))}
             </tbody>

@@ -10,6 +10,7 @@ import { getCredentials } from "./credentials.js";
 import { builderConfig } from "../builderConfig.js";
 
 const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
+const DATA_API = "https://data-api.polymarket.com";
 const GAMMA_HOST = process.env.POLYMARKET_GAMMA_HOST || "https://gamma-api.polymarket.com";
 const CHAIN_ID = 137;
 
@@ -112,54 +113,41 @@ export async function registerPositionRoutes(app: FastifyInstance) {
       const signerAddr = await signer.getAddress();
       const funderAddr = creds.funderAddress || signerAddr;
 
-      // Use the Gamma API to get positions for the maker address
-      // The CLOB positions endpoint requires the maker address (funder for proxy wallets)
-      const posRes = await fetch(`${GAMMA_HOST}/positions?user=${funderAddr.toLowerCase()}`);
+      // Use the Polymarket Data API to get positions
+      const posUrl = `${DATA_API}/positions?user=${funderAddr.toLowerCase()}&sizeThreshold=0.001`;
+      console.log(`[Positions] Fetching: ${posUrl}`);
+      const posRes = await fetch(posUrl);
 
       if (!posRes.ok) {
-        console.log(`[Positions] Gamma positions API returned ${posRes.status}`);
+        console.log(`[Positions] Data API returned ${posRes.status}`);
         return { positions: [], error: `Failed to fetch positions: ${posRes.status}` };
       }
 
       const rawPositions = await posRes.json() as Array<Record<string, unknown>>;
+      console.log(`[Positions] Got ${rawPositions.length} positions`);
 
-      // Map to clean shape with market info
-      const positions = rawPositions
-        .filter((p) => Number(p.size || 0) > 0.001)
-        .map((p) => {
-          const market = p.market as Record<string, unknown> | undefined;
-          return {
-            conditionId: String(p.conditionId || ""),
-            asset: String(p.asset || ""),
-            size: Number(p.size || 0),
-            avgPrice: Number(p.avgPrice || 0),
-            currentPrice: Number(p.curPrice || p.price || 0),
-            initialValue: Number(p.initialValue || 0),
-            currentValue: Number(p.currentValue || 0),
-            cashPnl: Number(p.cashPnl || 0),
-            percentPnl: Number(p.percentPnl || 0),
-            realizedPnl: Number(p.realizedPnl || 0),
-            side: String(p.outcome || p.side || ""),
-            outcomeIndex: Number(p.outcomeIndex ?? 0),
-            question: market ? String(market.question || "") : "",
-            slug: market ? String(market.slug || "") : "",
-            image: market ? String(market.image || market.icon || "") : "",
-          };
-        });
-
-      // If Gamma didn't include market info, try to enrich
-      const needsEnrichment = positions.some((p) => !p.question && p.conditionId);
-      if (needsEnrichment) {
-        const marketMap = await enrichWithMarketNames(positions);
-        for (const pos of positions) {
-          if (!pos.question && marketMap.has(pos.conditionId)) {
-            const m = marketMap.get(pos.conditionId)!;
-            pos.question = m.question;
-            pos.slug = m.slug;
-            pos.image = m.image;
-          }
-        }
-      }
+      // Data API already includes title, slug, icon, outcome directly
+      const positions = rawPositions.map((p) => ({
+        conditionId: String(p.conditionId || ""),
+        asset: String(p.asset || ""),
+        size: Number(p.size || 0),
+        avgPrice: Number(p.avgPrice || 0),
+        currentPrice: Number(p.curPrice || 0),
+        initialValue: Number(p.initialValue || 0),
+        currentValue: Number(p.currentValue || 0),
+        cashPnl: Number(p.cashPnl || 0),
+        percentPnl: Number(p.percentPnl || 0),
+        realizedPnl: Number(p.realizedPnl || 0),
+        side: String(p.outcome || ""),
+        outcomeIndex: Number(p.outcomeIndex ?? 0),
+        question: String(p.title || ""),
+        slug: String(p.eventSlug || p.slug || ""),
+        image: String(p.icon || ""),
+        redeemable: Boolean(p.redeemable),
+        mergeable: Boolean(p.mergeable),
+        negativeRisk: Boolean(p.negativeRisk),
+        endDate: String(p.endDate || ""),
+      }));
 
       return { positions };
     } catch (err) {
@@ -239,27 +227,34 @@ export async function registerPositionRoutes(app: FastifyInstance) {
       const signerAddr = await signer.getAddress();
       const funderAddr = creds.funderAddress || signerAddr;
 
-      // Fetch trade history from CLOB
-      const tradesRes = await fetch(`${CLOB_HOST}/trades?maker=${funderAddr.toLowerCase()}&limit=50`);
+      // Fetch trade history from Polymarket Data API
+      const tradesUrl = `${DATA_API}/trades?user=${funderAddr.toLowerCase()}&limit=50`;
+      console.log(`[Trades] Fetching: ${tradesUrl}`);
+      const tradesRes = await fetch(tradesUrl);
 
       if (!tradesRes.ok) {
-        console.log(`[Trades] CLOB trades API returned ${tradesRes.status}`);
+        console.log(`[Trades] Data API returned ${tradesRes.status}`);
         return { trades: [] };
       }
 
       const rawTrades = await tradesRes.json() as Array<Record<string, unknown>>;
+      console.log(`[Trades] Got ${rawTrades.length} trades`);
 
       const trades = rawTrades.map((t) => ({
-        id: String(t.id || t.tradeId || ""),
-        conditionId: String(t.market || t.conditionId || ""),
-        asset: String(t.asset || t.tokenId || ""),
+        id: String(t.transactionHash || ""),
+        conditionId: String(t.conditionId || ""),
+        asset: String(t.asset || ""),
         side: String(t.side || ""),
         price: Number(t.price || 0),
         size: Number(t.size || 0),
-        fee: Number(t.fee || 0),
-        status: String(t.status || t.matchType || ""),
-        timestamp: String(t.createdAt || t.timestamp || ""),
+        fee: 0,
+        status: "filled",
+        timestamp: t.timestamp ? new Date(Number(t.timestamp) * 1000).toISOString() : "",
         txHash: String(t.transactionHash || ""),
+        question: String(t.title || ""),
+        outcome: String(t.outcome || ""),
+        slug: String(t.eventSlug || t.slug || ""),
+        icon: String(t.icon || ""),
       }));
 
       return { trades };
