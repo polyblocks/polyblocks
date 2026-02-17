@@ -48,47 +48,86 @@ function saveLibraryToStorage(lib: SavedStrategy[]) {
   localStorage.setItem(LIBRARY_KEY, JSON.stringify(lib));
 }
 
-// ─── Persistent Trades & Logs ───────────────────────────────────────────────
+// ─── Per-Strategy Persistent Trades & Logs ──────────────────────────────────
+// Each strategy gets its own localStorage keys so data is fully isolated.
 
-const TRADES_KEY = "polyblocks_trades";
-const LOGS_KEY = "polyblocks_logs";
-const POSITIONS_KEY = "polyblocks_positions";
+function tradesKey(strategyId: string) { return `polyblocks_trades_${strategyId}`; }
+function logsKey(strategyId: string) { return `polyblocks_logs_${strategyId}`; }
+function positionsKey(strategyId: string) { return `polyblocks_positions_${strategyId}`; }
 
-function loadTradesFromStorage(): PaperTrade[] {
+function loadTradesFromStorage(strategyId: string): PaperTrade[] {
   try {
-    const raw = localStorage.getItem(TRADES_KEY);
+    const raw = localStorage.getItem(tradesKey(strategyId));
     return raw ? (JSON.parse(raw) as PaperTrade[]) : [];
   } catch { return []; }
 }
 
-function loadLogsFromStorage(): ExecutionLog[] {
+function loadLogsFromStorage(strategyId: string): ExecutionLog[] {
   try {
-    const raw = localStorage.getItem(LOGS_KEY);
+    const raw = localStorage.getItem(logsKey(strategyId));
     return raw ? (JSON.parse(raw) as ExecutionLog[]) : [];
   } catch { return []; }
 }
 
-function loadPositionsFromStorage(): PaperPosition[] {
+function loadPositionsFromStorage(strategyId: string): PaperPosition[] {
   try {
-    const raw = localStorage.getItem(POSITIONS_KEY);
+    const raw = localStorage.getItem(positionsKey(strategyId));
     return raw ? (JSON.parse(raw) as PaperPosition[]) : [];
   } catch { return []; }
 }
 
-function saveTradesToStorage(trades: PaperTrade[]) {
-  try { localStorage.setItem(TRADES_KEY, JSON.stringify(trades.slice(0, 500))); } catch { /* quota */ }
+function saveTradesToStorage(strategyId: string, trades: PaperTrade[]) {
+  try { localStorage.setItem(tradesKey(strategyId), JSON.stringify(trades.slice(0, 500))); } catch { /* quota */ }
 }
 
-function saveLogsToStorage(logs: ExecutionLog[]) {
-  try { localStorage.setItem(LOGS_KEY, JSON.stringify(logs.slice(-100))); } catch { /* quota */ }
+function saveLogsToStorage(strategyId: string, logs: ExecutionLog[]) {
+  try { localStorage.setItem(logsKey(strategyId), JSON.stringify(logs.slice(-100))); } catch { /* quota */ }
 }
 
-function savePositionsToStorage(positions: PaperPosition[]) {
-  try { localStorage.setItem(POSITIONS_KEY, JSON.stringify(positions)); } catch { /* quota */ }
+function savePositionsToStorage(strategyId: string, positions: PaperPosition[]) {
+  try { localStorage.setItem(positionsKey(strategyId), JSON.stringify(positions)); } catch { /* quota */ }
 }
 
 // Persistent abort controller for continuous run
 let runAbortController: AbortController | null = null;
+
+// ─── PnL Helpers ────────────────────────────────────────────────────────────
+
+const CLOB_HOST = "https://clob.polymarket.com";
+
+/**
+ * Fetch current midpoint prices for all open positions and compute unrealized PnL.
+ * PnL for a long (BUY) position: (currentPrice - avgEntryPrice) × size
+ * Uses the CLOB midpoint API.
+ */
+async function updatePositionPrices(positions: PaperPosition[]): Promise<void> {
+  // Deduplicate token IDs to avoid redundant fetches
+  const uniqueTokenIds = [...new Set(positions.map((p) => p.tokenId).filter(Boolean))];
+  const priceMap = new Map<string, number>();
+
+  await Promise.all(
+    uniqueTokenIds.map(async (tokenId) => {
+      try {
+        const res = await fetch(`${CLOB_HOST}/midpoint?token_id=${tokenId}`);
+        if (res.ok) {
+          const data = (await res.json()) as { mid: string };
+          priceMap.set(tokenId, parseFloat(data.mid));
+        }
+      } catch {
+        // Keep existing price on failure
+      }
+    }),
+  );
+
+  for (const pos of positions) {
+    const currentPrice = priceMap.get(pos.tokenId);
+    if (currentPrice !== undefined) {
+      pos.currentPrice = currentPrice;
+      // PnL = (currentPrice - avgEntry) × shares
+      pos.unrealizedPnl = (currentPrice - pos.avgEntryPrice) * pos.size;
+    }
+  }
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -227,8 +266,10 @@ interface EditorState {
 
 // ─── Store ──────────────────────────────────────────────────────────────────
 
+const _initialStrategyId = nanoid();
+
 export const useEditorStore = create<EditorState>((set, get) => ({
-  strategyId: nanoid(),
+  strategyId: _initialStrategyId,
   strategyName: "Untitled Strategy",
   strategyStatus: StrategyStatus.Draft,
 
@@ -237,9 +278,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selectedNodeId: null,
 
   validationIssues: [],
-  logs: loadLogsFromStorage(),
-  trades: loadTradesFromStorage(),
-  positions: loadPositionsFromStorage(),
+  logs: [],
+  trades: [],
+  positions: [],
   showLogDrawer: false,
   showPropertiesPanel: true,
   showTradesPanel: false,
@@ -391,6 +432,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   loadStrategy: (graph) => {
+    // Stop local polling for the current strategy (server keeps running)
+    if (runAbortController) {
+      runAbortController.abort();
+      runAbortController = null;
+    }
     set({
       strategyId: graph.id,
       strategyName: graph.name,
@@ -399,22 +445,39 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       edges: graph.edges.map(strategyEdgeToFlow),
       selectedNodeId: null,
       validationIssues: [],
-      // NOTE: logs, trades, positions are intentionally NOT cleared here.
-      // They persist until the user explicitly clicks the trash button.
+      // Load per-strategy data
+      logs: loadLogsFromStorage(graph.id),
+      trades: loadTradesFromStorage(graph.id),
+      positions: loadPositionsFromStorage(graph.id),
+      // Reset run state — EditorPage useEffect will check server status
+      isRunning: false,
+      runIteration: 0,
+      runError: null,
     });
   },
 
   newStrategy: () => {
+    // Stop local polling for the current strategy (server keeps running)
+    if (runAbortController) {
+      runAbortController.abort();
+      runAbortController = null;
+    }
+    const newId = nanoid();
     set({
-      strategyId: nanoid(),
+      strategyId: newId,
       strategyName: "Untitled Strategy",
       strategyStatus: StrategyStatus.Draft,
       nodes: [],
       edges: [],
       selectedNodeId: null,
       validationIssues: [],
-      // NOTE: logs, trades, positions are intentionally NOT cleared here.
-      // They persist until the user explicitly clicks the trash button.
+      // Fresh strategy — no data
+      logs: [],
+      trades: [],
+      positions: [],
+      isRunning: false,
+      runIteration: 0,
+      runError: null,
     });
   },
 
@@ -549,8 +612,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                       if (Math.abs(newSize) < 0.001) {
                         posMap.delete(key);
                       } else {
+                        // Weighted average entry price on buys only
+                        if (sizeChange > 0) {
+                          existing.avgEntryPrice =
+                            (existing.avgEntryPrice * existing.size + t.price * sizeChange) /
+                            (existing.size + sizeChange);
+                        }
                         existing.size = newSize;
-                        existing.avgEntryPrice = (existing.avgEntryPrice + t.price) / 2;
                       }
                     } else if (sizeChange > 0) {
                       posMap.set(key, {
@@ -567,15 +635,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                     }
                   }
 
+                  // Fetch current prices for PnL calculation
                   const positionsArr = Array.from(posMap.values());
+                  await updatePositionPrices(positionsArr);
                   set({
                     trades: allTrades,
                     positions: positionsArr,
                     showTradesPanel: true,
                     bottomTab: "trades",
                   });
-                  saveTradesToStorage(allTrades);
-                  savePositionsToStorage(positionsArr);
+                  saveTradesToStorage(graph.id, allTrades);
+                  savePositionsToStorage(graph.id, positionsArr);
                 }
               }
             }
@@ -675,7 +745,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (newTrades.length > 0) {
         const allTrades = [...newTrades, ...get().trades].slice(0, 500);
         set({ trades: allTrades, bottomTab: "trades" });
-        saveTradesToStorage(allTrades);
+        saveTradesToStorage(graph.id, allTrades);
       }
     } catch (err) {
       set({ runError: err instanceof Error ? err.message : String(err) });
@@ -809,12 +879,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   addLog: (log) => {
     const logs = [...get().logs, log].slice(-100);
     set({ logs });
-    saveLogsToStorage(logs);
+    saveLogsToStorage(get().strategyId, logs);
   },
 
   clearLogs: () => {
     set({ logs: [] });
-    saveLogsToStorage([]);
+    saveLogsToStorage(get().strategyId, []);
   },
 
   toggleLogDrawer: () => {
@@ -834,8 +904,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   clearTrades: () => {
+    const sid = get().strategyId;
     set({ trades: [], positions: [] });
-    saveTradesToStorage([]);
-    savePositionsToStorage([]);
+    saveTradesToStorage(sid, []);
+    savePositionsToStorage(sid, []);
   },
 }));

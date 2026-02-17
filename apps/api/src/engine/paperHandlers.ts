@@ -83,10 +83,12 @@ const manualTriggerHandler: NodeHandler = {
 
 const priceCrossTriggerHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
-    const market = inputs.market as { conditionId: string; clobTokenIds: string[] } | undefined;
+    const market = inputs.market as { conditionId: string; clobTokenIds?: string[]; tokens?: Array<{ token_id: string }> } | undefined;
     if (!market) return { signal: false, price: null };
 
-    const tokenId = market.clobTokenIds[0];
+    const allTokenIds = market.clobTokenIds || market.tokens?.map((t) => t.token_id) || [];
+    const tokenId = allTokenIds[0];
+    if (!tokenId) return { signal: false, price: null };
     const data = (await fetchJson(`${CLOB_HOST}/midpoint?token_id=${tokenId}`)) as { mid: string };
     const price = parseFloat(data.mid);
 
@@ -112,9 +114,29 @@ const marketSelectorHandler: NodeHandler = {
     // Use cache to avoid re-fetching on every poll iteration
     const t0 = Date.now();
     try {
-      const market = await fetchMarketCached(conditionId);
+      const raw = await fetchMarketCached(conditionId) as Record<string, unknown>;
       const elapsed = Date.now() - t0;
-      ctx.log(node.id, `✅ Market loaded: ${conditionId} (${elapsed}ms${elapsed < 5 ? " — cached" : ""})`);
+
+      // ── Normalise market object ─────────────────────────────────────
+      // The CLOB /markets/{conditionId} endpoint returns { tokens: [{token_id}] }
+      // but many downstream handlers expect clobTokenIds: string[].
+      // Also ensure conditionId is always present.
+      const market = { ...raw, conditionId } as Record<string, unknown>;
+
+      // Extract clobTokenIds from tokens array if missing
+      if (!market.clobTokenIds || (Array.isArray(market.clobTokenIds) && (market.clobTokenIds as string[]).length === 0)) {
+        const tokens = market.tokens as Array<{ token_id: string }> | undefined;
+        if (tokens && Array.isArray(tokens)) {
+          market.clobTokenIds = tokens.map((t) => t.token_id);
+        }
+      }
+
+      // Also map condition_id → conditionId if the API returns snake_case
+      if (!market.conditionId && market.condition_id) {
+        market.conditionId = market.condition_id;
+      }
+
+      ctx.log(node.id, `✅ Market loaded: ${conditionId} (${elapsed}ms${elapsed < 5 ? " — cached" : ""}) | tokenIds: ${(market.clobTokenIds as string[] || []).length}`);
       return { market };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -163,10 +185,11 @@ const priceDataHandler: NodeHandler = {
 
 const spreadDataHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
-    const market = inputs.market as { clobTokenIds?: string[] } | undefined;
-    if (!market?.clobTokenIds?.[0]) return { spread: null };
+    const market = inputs.market as { clobTokenIds?: string[]; tokens?: Array<{ token_id: string }> } | undefined;
+    const spreadTokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
+    if (!spreadTokenIds[0]) return { spread: null };
 
-    const tokenId = market.clobTokenIds[0];
+    const tokenId = spreadTokenIds[0];
     const data = (await fetchJson(`${CLOB_HOST}/spread?token_id=${tokenId}`)) as { spread: string };
     const spread = parseFloat(data.spread);
 
@@ -177,10 +200,11 @@ const spreadDataHandler: NodeHandler = {
 
 const orderBookDataHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
-    const market = inputs.market as { clobTokenIds?: string[] } | undefined;
-    if (!market?.clobTokenIds?.[0]) return { orderbook: null, bidDepth: 0, askDepth: 0 };
+    const market = inputs.market as { clobTokenIds?: string[]; tokens?: Array<{ token_id: string }> } | undefined;
+    const obTokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
+    if (!obTokenIds[0]) return { orderbook: null, bidDepth: 0, askDepth: 0 };
 
-    const tokenId = market.clobTokenIds[0];
+    const tokenId = obTokenIds[0];
     const book = (await fetchJson(`${CLOB_HOST}/book?token_id=${tokenId}`)) as {
       bids: Array<{ price: string; size: string }>;
       asks: Array<{ price: string; size: string }>;
@@ -345,17 +369,18 @@ const killSwitchHandler: NodeHandler = {
 const placeOrderHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
     const t0 = Date.now();
-    const market = inputs.market as { clobTokenIds?: string[]; conditionId?: string } | undefined;
+    const market = inputs.market as { clobTokenIds?: string[]; conditionId?: string; condition_id?: string; tokens?: Array<{ token_id: string }> } | undefined;
     // Side can come from input port (e.g. UserActivity) or fall back to config
     const side = inputs.side ? String(inputs.side) : String(node.config.side || "BUY");
     // Outcome can come from an input port (e.g. UserActivity) or fall back to config
     const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
     const sizeUsd = inputs.sizeUsd ? Number(inputs.sizeUsd) : Number(node.config.sizeUsd || 10);
     const inputPrice = inputs.price as number | undefined;
+    const marketConditionId = market?.conditionId || market?.condition_id || "";
 
     // Duplicate trade prevention
     if (node.config.preventDuplicate) {
-      const tradeKey = `placed_${node.id}_${market?.conditionId || ""}_${side}_${outcome}`;
+      const tradeKey = `placed_${node.id}_${marketConditionId}_${side}_${outcome}`;
       if (ctx.state.get(tradeKey)) {
         ctx.log(node.id, `⏭️ Duplicate trade skipped (${side} ${outcome} already placed this run)`);
         return { orderId: null, filled: false };
@@ -363,7 +388,7 @@ const placeOrderHandler: NodeHandler = {
       ctx.state.set(tradeKey, true);
     }
 
-    const tokenIds = market?.clobTokenIds || [];
+    const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
     const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
 
     // Get current price to simulate fill
@@ -391,7 +416,7 @@ const placeOrderHandler: NodeHandler = {
       size: shares,
       sizeUsd,
       tokenId,
-      conditionId: market?.conditionId,
+      conditionId: marketConditionId,
       filled: true,
       timestamp: Date.now(),
     };
@@ -408,15 +433,16 @@ const placeOrderHandler: NodeHandler = {
 
 const limitOrderHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
-    const market = inputs.market as { clobTokenIds?: string[]; conditionId?: string } | undefined;
+    const market = inputs.market as { clobTokenIds?: string[]; conditionId?: string; condition_id?: string; tokens?: Array<{ token_id: string }> } | undefined;
     const side = inputs.side ? String(inputs.side) : String(node.config.side || "BUY");
     const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
     const sizeUsd = inputs.sizeUsd ? Number(inputs.sizeUsd) : Number(node.config.sizeUsd || 10);
     const limitPrice = inputs.limitPrice ? Number(inputs.limitPrice) : Number(node.config.limitPrice || 0.5);
+    const marketConditionId = market?.conditionId || market?.condition_id || "";
 
     // Duplicate trade prevention
     if (node.config.preventDuplicate) {
-      const tradeKey = `placed_${node.id}_${market?.conditionId || ""}_${side}_${outcome}`;
+      const tradeKey = `placed_${node.id}_${marketConditionId}_${side}_${outcome}`;
       if (ctx.state.get(tradeKey)) {
         ctx.log(node.id, `⏭️ Duplicate trade skipped (${side} ${outcome} already placed this run)`);
         return { orderId: null, placed: false };
@@ -424,7 +450,7 @@ const limitOrderHandler: NodeHandler = {
       ctx.state.set(tradeKey, true);
     }
 
-    const tokenIds = market?.clobTokenIds || [];
+    const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
     const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
 
     // Get current price to check if limit would fill
@@ -451,7 +477,7 @@ const limitOrderHandler: NodeHandler = {
       size: shares,
       sizeUsd,
       tokenId,
-      conditionId: market?.conditionId,
+      conditionId: marketConditionId,
       filled: wouldFill,
       timestamp: Date.now(),
     };
