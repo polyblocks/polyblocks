@@ -67,7 +67,10 @@ const livePlaceOrderHandler: NodeHandler = {
     const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
 
     if (!tokenId) {
-      throw new Error("No token ID available for order placement");
+      const debugInfo = market
+        ? `Market found but no token IDs (keys: ${Object.keys(market).join(", ")})`
+        : "No market data received — check that Market Selector is connected and has a market selected.";
+      throw new Error(`No token ID available for order placement. ${debugInfo}`);
     }
 
     const sideEnum = side === "BUY" ? Side.BUY : Side.SELL;

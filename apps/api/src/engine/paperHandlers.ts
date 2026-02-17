@@ -86,17 +86,23 @@ const priceCrossTriggerHandler: NodeHandler = {
 
 const marketSelectorHandler: NodeHandler = {
   async execute(node, _inputs, ctx) {
-    const conditionId = String(node.config.conditionId);
+    const conditionId = node.config.conditionId ? String(node.config.conditionId).trim() : "";
     if (!conditionId) {
-      throw new Error("No market selected");
+      throw new Error("No market selected — open the Market Selector node and pick a market.");
     }
 
+    ctx.log(node.id, `Fetching market: ${conditionId}`);
+
     // Fetch market data from CLOB
-    const market = await fetchJson(`${CLOB_HOST}/markets/${conditionId}`);
-
-    ctx.log(node.id, `Selected market: ${conditionId}`);
-
-    return { market };
+    try {
+      const market = await fetchJson(`${CLOB_HOST}/markets/${conditionId}`);
+      ctx.log(node.id, `✅ Selected market: ${conditionId}`);
+      return { market };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      ctx.log(node.id, `❌ Failed to fetch market ${conditionId}: ${msg}`);
+      throw new Error(`Market lookup failed for ${conditionId}: ${msg}`);
+    }
   },
 };
 
