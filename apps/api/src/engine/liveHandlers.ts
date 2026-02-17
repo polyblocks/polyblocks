@@ -27,15 +27,20 @@ async function createClobClientAsync(userId?: string): Promise<ClobClient> {
   const signerAddr = await signer.getAddress();
 
   // ── Auto-fix signatureType ──────────────────────────────────────────────
-  // signatureType 1 (POLY_PROXY) means the signer is an EOA acting on behalf
-  // of a DIFFERENT proxy contract wallet (the funderAddress/maker).
-  // If funderAddress equals the signer address, there's no proxy wallet —
-  // it's a plain EOA, so signatureType MUST be 0 (EOA).
+  // signatureType 0 (EOA): maker === signer, plain wallet signs for itself.
+  // signatureType 1 (POLY_PROXY): signer is an EOA signing on behalf of a
+  //   DIFFERENT proxy contract wallet (the funderAddress/maker).
+  //
+  // Auto-detect the correct type based on whether funder differs from signer:
   let signatureType = creds.signatureType;
   const funderAddr = creds.funderAddress || signerAddr;
+  const funderIsDifferent = funderAddr.toLowerCase() !== signerAddr.toLowerCase();
 
-  if (signatureType === 1 && funderAddr.toLowerCase() === signerAddr.toLowerCase()) {
-    console.log(`[LIVE] ⚠️  signatureType was 1 (POLY_PROXY) but funder === signer — auto-correcting to 0 (EOA)`);
+  if (funderIsDifferent && signatureType === 0) {
+    console.log(`[LIVE] ⚠️  funder (${funderAddr}) ≠ signer (${signerAddr}) but signatureType was 0 (EOA) — auto-correcting to 1 (POLY_PROXY)`);
+    signatureType = 1;
+  } else if (!funderIsDifferent && signatureType === 1) {
+    console.log(`[LIVE] ⚠️  funder === signer but signatureType was 1 (POLY_PROXY) — auto-correcting to 0 (EOA)`);
     signatureType = 0;
   }
 
