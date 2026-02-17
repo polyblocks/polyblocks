@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users } from "lucide-react";
+import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X } from "lucide-react";
 import { useAuthStore } from "../stores/authStore";
 
 export default function Layout() {
   const { user, isPro, logout } = useAuthStore();
   const navigate = useNavigate();
+  const [showPlans, setShowPlans] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -50,27 +52,98 @@ export default function Layout() {
           <BookTemplate size={20} />
         </NavLink>
         <NavLink
-          to="/backtesting"
+          to="/copy-trading"
           className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}
           title="Copy Trading"
         >
           <Users size={20} />
         </NavLink>
+        <NavLink
+          to="/backtesting"
+          className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}
+          title="Backtesting"
+        >
+          <FlaskConical size={20} />
+        </NavLink>
+
         <div className="nav-spacer" />
 
-        {/* Tier badge */}
         {user && !isPro() && (
           <NavLink
             to="/pricing"
-            className="nav-btn nav-upgrade"
+            className={({ isActive }) => `nav-btn nav-upgrade ${isActive ? "active" : ""}`}
             title="Upgrade to Pro"
           >
             <Crown size={18} />
           </NavLink>
         )}
         {user && isPro() && (
-          <div className="nav-btn nav-pro-badge" title="Pro Member">
-            <Crown size={18} />
+          <button
+            className="nav-btn nav-support"
+            title="Contact Support"
+            onClick={() => navigate("/landing#contact")}
+          >
+            <Mail size={16} />
+          </button>
+        )}
+        {user && (
+          <div className="nav-plans-wrapper">
+            <button
+              className={`nav-btn ${isPro() ? "nav-pro-badge" : "nav-upgrade"}`}
+              title={isPro() ? "Pro Member — View Plans" : "View Plans"}
+              onClick={() => setShowPlans(!showPlans)}
+            >
+              <Crown size={18} />
+            </button>
+
+            {showPlans && (
+              <>
+                <div className="nav-plans-overlay" onClick={() => setShowPlans(false)} />
+                <div className="nav-plans-popup">
+                  <div className="nav-plans-header">
+                    <span>Plans</span>
+                    <button className="nav-plans-close" onClick={() => setShowPlans(false)}>
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div className={`nav-plan-item ${!isPro() ? "current" : ""}`}>
+                    <div className="nav-plan-name">
+                      <CheckCircle size={13} />
+                      Free
+                    </div>
+                    <div className="nav-plan-desc">Paper trading, all blocks, AI builder</div>
+                    {!isPro() && <span className="nav-plan-badge">Current</span>}
+                  </div>
+
+                  <div className={`nav-plan-item pro ${isPro() ? "current" : ""}`}>
+                    <div className="nav-plan-name">
+                      <Zap size={13} />
+                      Pro — $7/mo
+                    </div>
+                    <div className="nav-plan-desc">Live trading, copy trading, priority support</div>
+                    {isPro() ? (
+                      <span className="nav-plan-badge pro">Active</span>
+                    ) : (
+                      <button className="nav-plan-upgrade-btn" onClick={() => { setShowPlans(false); navigate("/pricing"); }}>
+                        Upgrade
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="nav-plan-item enterprise">
+                    <div className="nav-plan-name">
+                      <MessageCircle size={13} />
+                      Enterprise
+                    </div>
+                    <div className="nav-plan-desc">24/7 trading, custom strategies, dedicated support</div>
+                    <button className="nav-plan-discuss-btn" onClick={() => { setShowPlans(false); navigate("/landing#contact"); }}>
+                      Discuss
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 

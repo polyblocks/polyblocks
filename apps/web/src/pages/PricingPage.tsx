@@ -17,6 +17,7 @@ import {
   Zap,
   BadgeCheck,
   Shield,
+  Mail,
 } from "lucide-react";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -548,6 +549,15 @@ export default function PricingPage() {
               </div>
             </div>
           )}
+
+          {/* ─── Support contact ────────────────────────────────────── */}
+          <div className="pricing-support-contact">
+            <Mail size={16} />
+            <div>
+              <p>Need help or have a custom request?</p>
+              <a href="mailto:contact@poly-blocks.com">contact@poly-blocks.com</a>
+            </div>
+          </div>
         </div>
       </div>
     </div>

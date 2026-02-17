@@ -42,7 +42,10 @@ async function createClobClientAsync(userId?: string): Promise<ClobClient> {
   );
 }
 
-// ── Live order placement ────────────────────────────────────────────────────
+// ── Live market order placement ──────────────────────────────────────────────
+// Uses createAndPostMarketOrder — a TRUE market order that automatically
+// reads the order book and calculates the best fill price.
+// BUY amount = USD to spend, SELL amount = shares to sell.
 
 const livePlaceOrderHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
@@ -56,6 +59,10 @@ const livePlaceOrderHandler: NodeHandler = {
     const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
     const sizeUsd = inputs.sizeUsd ? Number(inputs.sizeUsd) : Number(node.config.sizeUsd || 10);
 
+    // Order type: FOK (Fill-Or-Kill) or FAK (Fill-And-Kill / IOC)
+    const orderTypeStr = String(node.config.orderType || "FOK").toUpperCase();
+    const orderType = orderTypeStr === "FAK" ? OrderType.FAK : OrderType.FOK;
+
     const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
     const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
 
@@ -63,66 +70,98 @@ const livePlaceOrderHandler: NodeHandler = {
       throw new Error("No token ID available for order placement");
     }
 
-    const client = await createClobClientAsync();
-
-    // Get market info for tick size and neg risk
-    const marketInfo = await client.getMarket(market?.conditionId || "");
-
-    // Determine price — use midpoint if not explicitly set
-    let price = Number(node.config.price || 0);
-    if (!price) {
-      try {
-        const mid = await fetch(`${CLOB_HOST}/midpoint?token_id=${tokenId}`);
-        const midData = await mid.json() as { mid: string };
-        price = parseFloat(midData.mid);
-      } catch {
-        price = 0.5;
-      }
-    }
-
-    // Calculate number of shares
-    const shares = Math.floor((sizeUsd / price) * 100) / 100; // Round to 2 decimals
+    const sideEnum = side === "BUY" ? Side.BUY : Side.SELL;
 
     ctx.log(
       node.id,
-      `🔴 LIVE ${side} ${outcome} | ${shares.toFixed(2)} shares @ $${price.toFixed(3)} ($${sizeUsd})`,
+      `🔴 LIVE MARKET ${orderTypeStr} ${side} ${outcome} | $${sizeUsd} USD`,
     );
 
-    // Map our order types to CLOB SDK types
-    const sideEnum = side === "BUY" ? Side.BUY : Side.SELL;
+    const client = await createClobClientAsync();
 
     try {
-      const response = await client.createAndPostOrder(
+      // Use the SDK's true market order method.
+      // For BUY: amount = USD to spend.  For SELL: amount = shares to sell.
+      // The SDK automatically reads the order book and calculates the best
+      // execution price — no manual midpoint/price lookup needed.
+      const response = await client.createAndPostMarketOrder(
         {
           tokenID: tokenId,
-          price,
-          size: shares,
+          amount: sizeUsd,
           side: sideEnum,
+          orderType,
         },
-        {
-          tickSize: marketInfo.minimum_tick_size || "0.01",
-          negRisk: marketInfo.neg_risk || false,
-        },
-        OrderType.GTC,
-      ) as { orderID?: string; status?: string };
+        undefined, // options — SDK resolves tickSize & negRisk automatically
+        orderType,
+      ) as { orderID?: string; status?: string; transactionsHashes?: string[]; takingAmount?: string; makingAmount?: string; [key: string]: unknown };
+
+      // Log the full response for debugging
+      ctx.log(
+        node.id,
+        `📋 CLOB Response: ${JSON.stringify(response)}`,
+      );
+
+      // ── Detect HTTP-level errors ──────────────────────────────────────
+      // The SDK's error handler returns { error: "...", status: 403 } for
+      // HTTP errors instead of throwing. Detect numeric status or error field.
+      const resp = response as Record<string, unknown>;
+      const httpStatus = Number(resp.status) || 0;
+      if (httpStatus >= 400 || resp.error) {
+        const errMsg = String(resp.error || `HTTP ${httpStatus}`);
+        let hint = "";
+        if (httpStatus === 403) {
+          hint = "\n\n💡 403 Forbidden — common causes:\n" +
+            "  1. API credentials expired → Go to Settings, clear & re-save your credentials\n" +
+            "  2. Token allowance not set → Visit polymarket.com and place a small manual trade first to approve the contract\n" +
+            "  3. Insufficient USDC balance on Polygon for this trade size";
+        } else if (httpStatus === 401) {
+          hint = "\n\n💡 401 Unauthorized — your API key/secret may be invalid. Go to Settings and re-save your private key.";
+        }
+        ctx.log(node.id, `❌ CLOB API Error (${httpStatus}): ${errMsg}${hint}`);
+        throw new Error(`CLOB API error ${httpStatus}: ${errMsg}`);
+      }
+
+      // ── Check SDK-level error ──────────────────────────────────────────
+      if (response.success === false && response.errorMsg) {
+        ctx.log(node.id, `❌ CLOB Error: ${String(response.errorMsg)}`);
+        throw new Error(String(response.errorMsg));
+      }
+
+      // ── Determine fill status from CLOB response ──────────────────────
+      // response.status can be a string, number, or undefined — always coerce to string
+      const rawStatus = response.status;
+      const status = (rawStatus != null ? String(rawStatus) : "").toLowerCase();
+      const filled = status === "matched" || status === "filled";
+
+      const statusEmoji = filled ? "✅" : "⚠️";
+      const statusLabel = filled
+        ? `FILLED` + (response.takingAmount ? ` — received ${response.takingAmount} shares` : "")
+        : `${rawStatus ?? "unknown"}` + (orderTypeStr === "FOK" ? " (order killed — no full fill available at this size)" : " (partial fill — remainder killed)");
 
       ctx.log(
         node.id,
-        `✅ LIVE ORDER PLACED — ID: ${response.orderID}, Status: ${response.status}`,
+        `${statusEmoji} LIVE MARKET ORDER — ID: ${response.orderID}, Status: ${statusLabel}`,
       );
+
+      if (response.transactionsHashes?.length) {
+        ctx.log(node.id, `🔗 Tx: ${response.transactionsHashes.join(", ")}`);
+      }
 
       // Track exposure
       const prevExposure = (ctx.state.get("paperExposureUsd") as number) || 0;
-      ctx.state.set("paperExposureUsd", prevExposure + sizeUsd);
+      if (filled) {
+        ctx.state.set("paperExposureUsd", prevExposure + sizeUsd);
+      }
 
       return {
         orderId: response.orderID || "",
-        filled: response.status === "matched" ? true : null,
+        filled,
+        status: rawStatus != null ? String(rawStatus) : "unknown",
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      ctx.log(node.id, `❌ LIVE ORDER FAILED: ${msg}`);
-      throw new Error(`Live order failed: ${msg}`);
+      ctx.log(node.id, `❌ LIVE MARKET ORDER FAILED: ${msg}`);
+      throw new Error(`Live market order failed: ${msg}`);
     }
   },
 };
@@ -162,7 +201,7 @@ const liveClosePositionHandler: NodeHandler = {
 
     ctx.log(node.id, "🔴 LIVE CLOSE POSITION — placing market sell order");
 
-    // For close, we place a FOK sell at midpoint
+    // For close, we place a FOK market sell
     const tokenId = market.clobTokenIds?.[0];
     if (!tokenId) {
       throw new Error("No token ID for close");
@@ -170,27 +209,17 @@ const liveClosePositionHandler: NodeHandler = {
 
     try {
       const client = await createClobClientAsync();
-      const marketInfo = await client.getMarket(market.conditionId || "");
 
-      // Get current mid
-      const midRes = await fetch(`${CLOB_HOST}/midpoint?token_id=${tokenId}`);
-      const midData = await midRes.json() as { mid: string };
-      const price = parseFloat(midData.mid);
-
-      // We need to know position size — for now, close with a market sell
-      // In a full implementation, we'd track actual positions
-      const response = await client.createAndPostOrder(
+      // Use market order to sell position — amount = shares to sell
+      // TODO: Track actual position size; for now uses 1 share
+      const response = await client.createAndPostMarketOrder(
         {
           tokenID: tokenId,
-          price,
-          size: 1, // Will be replaced with actual position size
+          amount: 1, // Will be replaced with actual position size
           side: Side.SELL,
         },
-        {
-          tickSize: marketInfo.minimum_tick_size || "0.01",
-          negRisk: marketInfo.neg_risk || false,
-        },
-        OrderType.GTC,
+        undefined,
+        OrderType.FOK,
       ) as { orderID?: string; status?: string };
 
       ctx.log(node.id, `✅ LIVE CLOSE — Order ${response.orderID}, Status: ${response.status}`);
@@ -249,16 +278,62 @@ const liveLimitOrderHandler: NodeHandler = {
           negRisk: marketInfo.neg_risk || false,
         },
         OrderType.GTC,
-      ) as { orderID?: string; status?: string };
+      ) as { orderID?: string; status?: string; [key: string]: unknown };
+
+      // Log the full response for debugging
+      ctx.log(
+        node.id,
+        `📋 CLOB Response: ${JSON.stringify(response)}`,
+      );
+
+      // ── Detect HTTP-level errors ──────────────────────────────────────
+      const resp = response as Record<string, unknown>;
+      const httpStatus = Number(resp.status) || 0;
+      if (httpStatus >= 400 || resp.error) {
+        const errMsg = String(resp.error || `HTTP ${httpStatus}`);
+        let hint = "";
+        if (httpStatus === 403) {
+          hint = "\n\n💡 403 Forbidden — common causes:\n" +
+            "  1. API credentials expired → Go to Settings, clear & re-save your credentials\n" +
+            "  2. Token allowance not set → Visit polymarket.com and place a small manual trade first to approve the contract\n" +
+            "  3. Insufficient USDC balance on Polygon for this trade size";
+        } else if (httpStatus === 401) {
+          hint = "\n\n💡 401 Unauthorized — your API key/secret may be invalid. Go to Settings and re-save your private key.";
+        }
+        ctx.log(node.id, `❌ CLOB API Error (${httpStatus}): ${errMsg}${hint}`);
+        throw new Error(`CLOB API error ${httpStatus}: ${errMsg}`);
+      }
+
+      // ── Check SDK-level error ──────────────────────────────────────────
+      if (response.success === false && response.errorMsg) {
+        ctx.log(node.id, `❌ CLOB Error: ${String(response.errorMsg)}`);
+        throw new Error(String(response.errorMsg));
+      }
+
+      // response.status can be a string, number, or undefined — always coerce to string
+      const rawStatus = response.status;
+      const status = (rawStatus != null ? String(rawStatus) : "").toLowerCase();
+      const filled = status === "matched" || status === "filled";
+      const live = status === "live" || status === "delayed";
+
+      const statusEmoji = filled ? "✅" : live ? "📋" : "⚠️";
+      const statusLabel = filled
+        ? "FILLED"
+        : live
+          ? "LIVE (resting on order book)"
+          : `${rawStatus ?? "unknown"}`;
 
       ctx.log(
         node.id,
-        `✅ LIVE LIMIT ORDER PLACED — ID: ${response.orderID}, Status: ${response.status}`,
+        `${statusEmoji} LIVE LIMIT ORDER — ID: ${response.orderID}, Status: ${statusLabel}`,
       );
 
       return {
         orderId: response.orderID || "",
         placed: true,
+        filled,
+        status: rawStatus != null ? String(rawStatus) : "unknown",
+        live,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

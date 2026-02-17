@@ -235,6 +235,21 @@ function PropertiesContent({
         {blockType === BlockType.PlaceOrder && (
           <>
             <div className="property-group">
+              <label>Order Type</label>
+              <Select
+                value={String(config.orderType || "FOK")}
+                onChange={(e) => handleConfigChange("orderType", e.target.value)}
+              >
+                <option value="FOK">FOK — Fill or Kill</option>
+                <option value="FAK">FAK — Fill and Kill</option>
+              </Select>
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 11, margin: "4px 0 0 0" }}>
+                {String(config.orderType || "FOK") === "FOK"
+                  ? "Market order — fill entire amount or cancel. Best price found automatically."
+                  : "Market order — fill what's available now, cancel the rest. Best price found automatically."}
+              </p>
+            </div>
+            <div className="property-group">
               <label>Side</label>
               <Select
                 value={String(config.side)}

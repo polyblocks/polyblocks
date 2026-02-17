@@ -391,6 +391,14 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Pro support hint */}
+        {isPro() && (
+          <div className="pro-support-hint">
+            <Mail size={14} />
+            <span>Pro support — <a href="/landing#contact" onClick={(e) => { e.preventDefault(); window.location.href = "/landing#contact"; }}>Contact us</a></span>
+          </div>
+        )}
+
 
       </div>
     </div>

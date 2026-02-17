@@ -4,11 +4,13 @@
 
 import { useNavigate } from "react-router-dom";
 import { useEditorStore } from "../stores/editorStore";
-import { Plus, Workflow, BookTemplate, Library } from "lucide-react";
+import { useAuthStore } from "../stores/authStore";
+import { Plus, Workflow, BookTemplate, Library, Mail } from "lucide-react";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const newStrategy = useEditorStore((s) => s.newStrategy);
+  const { isPro } = useAuthStore();
 
   const handleNewStrategy = () => {
     newStrategy();
@@ -56,6 +58,13 @@ export default function DashboardPage() {
           <div className="action-desc">View your saved strategies</div>
         </div>
       </div>
+
+      {isPro() && (
+        <div className="pro-support-hint">
+          <Mail size={14} />
+          <span>Need help? <a href="/landing#contact" onClick={(e) => { e.preventDefault(); navigate("/landing#contact"); }}>Contact support</a></span>
+        </div>
+      )}
     </div>
   );
 }

@@ -29,6 +29,10 @@ import {
   Target,
   Workflow,
   BadgeCheck,
+  MessageCircle,
+  Clock,
+  Headphones,
+  Send,
 } from "lucide-react";
 
 export default function LandingPage() {
@@ -42,6 +46,14 @@ export default function LandingPage() {
   const [name, setName] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [showAuthForm, setShowAuthForm] = useState(false);
+
+  // Contact form state
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactMessage, setContactMessage] = useState("");
+  const [contactSent, setContactSent] = useState(false);
+  const [contactLoading, setContactLoading] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
 
   const handleStart = () => {
     if (isLoggedIn()) {
@@ -486,10 +498,136 @@ export default function LandingPage() {
             </button>
             <p className="pricing-guarantee">30-day money-back guarantee</p>
           </div>
+
+          {/* Enterprise tier */}
+          <div className="pricing-card enterprise">
+            <div className="pricing-badge enterprise-badge">
+              <MessageCircle size={12} />
+              Custom Plan
+            </div>
+            <div className="pricing-tier">Enterprise</div>
+            <div className="pricing-price">
+              <span className="price-amount" style={{ fontSize: 28 }}>Let's Talk</span>
+            </div>
+            <p className="pricing-desc">Need custom solutions? 24/7 automated trading at scale.</p>
+            <ul className="pricing-features">
+              <li><CheckCircle size={14} /> Everything in Pro</li>
+              <li className="highlight"><Clock size={14} /> 24/7 automated trading</li>
+              <li className="highlight"><Headphones size={14} /> Dedicated support</li>
+              <li className="highlight"><MessageCircle size={14} /> Custom strategy building</li>
+              <li><CheckCircle size={14} /> Priority bug fixes</li>
+              <li><CheckCircle size={14} /> Volume discounts</li>
+              <li><CheckCircle size={14} /> Custom integrations</li>
+              <li><CheckCircle size={14} /> Early access to features</li>
+            </ul>
+            <a
+              href="#contact"
+              className="pricing-btn enterprise"
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              <MessageCircle size={14} />
+              Discuss with Us
+            </a>
+            <p className="pricing-guarantee">contact@poly-blocks.com</p>
+          </div>
         </div>
       </section>
 
-      {/* ── CTA Banner ───────────────────────────────────────────────── */}
+      {/* ── Contact Form ─────────────────────────────────────────────────── */}
+      <section className="landing-section" id="contact">
+        <div className="landing-section-header">
+          <h2>Get in Touch</h2>
+          <p>Questions about Enterprise, custom strategies, or just want to chat? We'd love to hear from you.</p>
+        </div>
+
+        <div className="contact-form-container">
+          {contactSent ? (
+            <div className="contact-success">
+              <CheckCircle size={32} />
+              <h3>Message Sent!</h3>
+              <p>We'll get back to you at <strong>{contactEmail}</strong> as soon as possible.</p>
+            </div>
+          ) : (
+            <form
+              className="contact-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setContactLoading(true);
+                setContactError(null);
+                try {
+                  const res = await fetch("/api/contact/submit", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      name: contactName,
+                      email: contactEmail,
+                      message: contactMessage,
+                    }),
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    setContactSent(true);
+                  } else {
+                    setContactError(data.error || "Failed to send message. Please try again.");
+                  }
+                } catch {
+                  setContactError("Network error. Please try again.");
+                } finally {
+                  setContactLoading(false);
+                }
+              }}
+            >
+              <div className="contact-form-row">
+                <input
+                  type="text"
+                  placeholder="Your name"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  required
+                  className="contact-input"
+                />
+                <input
+                  type="email"
+                  placeholder="Your email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  required
+                  className="contact-input"
+                />
+              </div>
+              <textarea
+                placeholder="Tell us what you need — custom strategies, 24/7 trading, enterprise plan, etc."
+                value={contactMessage}
+                onChange={(e) => setContactMessage(e.target.value)}
+                required
+                rows={5}
+                className="contact-input contact-textarea"
+              />
+              {contactError && (
+                <div className="contact-error">
+                  {contactError}
+                </div>
+              )}
+              <button type="submit" className="contact-submit-btn" disabled={contactLoading}>
+                {contactLoading ? (
+                  <><Loader2 size={14} className="spin" /> Sending...</>
+                ) : (
+                  <><Send size={14} /> Send Message</>
+                )}
+              </button>
+              <p className="contact-hint">
+                Or email us directly at{" "}
+                <a href="mailto:contact@poly-blocks.com">contact@poly-blocks.com</a>
+              </p>
+            </form>
+          )}
+        </div>
+      </section>
+
+      {/* ── CTA Banner ───────────────────────────────────────────────────── */}
       <section className="landing-cta-banner">
         <div className="cta-banner-content">
           <Workflow size={32} />
@@ -512,7 +650,13 @@ export default function LandingPage() {
           </svg>
           <span>Polyblocks</span>
         </div>
-        <p>© {new Date().getFullYear()} Polyblocks. No-code trading for Polymarket.</p>
+        <div className="landing-footer-right">
+          <a href="mailto:contact@poly-blocks.com" className="landing-footer-link">
+            <Mail size={14} />
+            contact@poly-blocks.com
+          </a>
+          <p>© {new Date().getFullYear()} Polyblocks. No-code trading for Polymarket.</p>
+        </div>
       </footer>
 
       {/* ── Auth Modal ───────────────────────────────────────────────── */}

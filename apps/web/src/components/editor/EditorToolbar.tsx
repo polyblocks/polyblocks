@@ -19,6 +19,7 @@ import {
   Zap,
   Lock,
   Crown,
+  Monitor,
 } from "lucide-react";
 import { ValidationSeverity } from "@polyblocks/types";
 
@@ -246,6 +247,43 @@ export default function EditorToolbar() {
           {runMode === "live" ? <Zap size={14} /> : <Play size={14} />}
           {runMode === "live" ? "Live Run" : "Paper Run"}
         </Button>
+      )}
+
+      {/* Browser dependency notice — visible when running */}
+      {isRunning && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: -32,
+            left: 0,
+            right: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            padding: "6px 16px",
+            fontSize: 11,
+            zIndex: 10,
+            background: runMode === "live"
+              ? "rgba(239,68,68,0.08)"
+              : "rgba(245,158,11,0.06)",
+            borderBottom: runMode === "live"
+              ? "1px solid rgba(239,68,68,0.2)"
+              : "1px solid rgba(245,158,11,0.15)",
+            color: "var(--pb-text-muted)",
+          }}
+        >
+          <Monitor size={12} color={runMode === "live" ? "#ef4444" : "#f59e0b"} />
+          <span>
+            <strong style={{ color: runMode === "live" ? "#ef4444" : "#f59e0b" }}>
+              Browser required
+            </strong>
+            {" — "}
+            {runMode === "live"
+              ? "Live strategy runs in your browser. Closing this tab will stop execution and may leave open positions."
+              : "Strategy runs in your browser tab. It will stop if you close or navigate away."}
+          </span>
+        </div>
       )}
     </div>
   );

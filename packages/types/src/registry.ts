@@ -484,7 +484,7 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     type: BlockType.PlaceOrder,
     category: NodeCategory.Action,
     label: "Place Order",
-    description: "Place a limit order on a market",
+    description: "Place a market order — automatically finds the best price from the order book (FOK = all or nothing, FAK = partial fill ok)",
     inputs: [
       { id: "market", label: "Market", type: PortType.Market },
       { id: "signal", label: "Signal", type: PortType.Signal },
@@ -495,8 +495,9 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     outputs: [
       { id: "orderId", label: "Order ID", type: PortType.String },
       { id: "filled", label: "Filled", type: PortType.Signal },
+      { id: "status", label: "Status", type: PortType.String },
     ],
-    defaultConfig: { side: "BUY", outcome: "YES", sizeUsd: 10, preventDuplicate: false },
+    defaultConfig: { side: "BUY", outcome: "YES", sizeUsd: 10, orderType: "FOK", preventDuplicate: false },
     color: COLORS[NodeCategory.Action],
     icon: "send",
   },

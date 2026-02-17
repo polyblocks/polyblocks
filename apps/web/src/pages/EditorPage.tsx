@@ -145,6 +145,7 @@ export default function EditorPage() {
             deleteKeyCode={null}
             defaultEdgeOptions={{
               type: "smoothstep",
+              animated: true,
               style: { cursor: "pointer" },
               interactionWidth: 20,
             }}
