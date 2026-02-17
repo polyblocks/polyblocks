@@ -1,6 +1,7 @@
 /**
  * PositionsPage — shows all real on-chain positions from Polymarket CLOB
  * with the ability to close each one.
+ * Has two top-level modes: Live Trading (real CLOB) and Paper Trading (from editor store).
  */
 
 import { useEffect, useState, useCallback } from "react";
@@ -15,8 +16,11 @@ import {
   DollarSign,
   BarChart3,
   Activity,
+  FileText,
+  Radio,
 } from "lucide-react";
 import { Button } from "@polyblocks/ui";
+import { useEditorStore } from "../stores/editorStore";
 
 interface Position {
   conditionId: string;
@@ -76,12 +80,17 @@ function timeAgo(iso: string): string {
 }
 
 export default function PositionsPage() {
+  const [mode, setMode] = useState<"live" | "paper">("live");
   const [positions, setPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [tab, setTab] = useState<"positions" | "trades">("positions");
+
+  // Paper data from editor store
+  const paperTrades = useEditorStore((s) => s.trades);
+  const paperPositions = useEditorStore((s) => s.positions);
 
   const fetchPositions = useCallback(async () => {
     try {
@@ -157,7 +166,185 @@ export default function PositionsPage() {
         <p>Your real Polymarket positions and trade history.</p>
       </div>
 
-      {/* Summary cards */}
+      {/* ── Live / Paper Mode Toggle ───────────────────────────────── */}
+      <div className="pos-mode-toggle">
+        <button
+          className={`pos-mode-btn ${mode === "live" ? "active live" : ""}`}
+          onClick={() => setMode("live")}
+        >
+          <Radio size={14} />
+          Live Trading
+        </button>
+        <button
+          className={`pos-mode-btn ${mode === "paper" ? "active paper" : ""}`}
+          onClick={() => setMode("paper")}
+        >
+          <FileText size={14} />
+          Paper Trading
+          {paperTrades.length > 0 && (
+            <span className="tab-badge">{paperTrades.length}</span>
+          )}
+        </button>
+      </div>
+
+      {/* ── PAPER MODE ─────────────────────────────────────────────── */}
+      {mode === "paper" && (
+        <>
+          {/* Paper summary */}
+          <div className="positions-summary">
+            <div className="pos-stat-card">
+              <div className="pos-stat-icon" style={{ background: "rgba(99,102,241,0.12)", color: "var(--pb-accent)" }}>
+                <BarChart3 size={18} />
+              </div>
+              <div className="pos-stat-content">
+                <div className="pos-stat-label">Paper Positions</div>
+                <div className="pos-stat-value">{paperPositions.length}</div>
+              </div>
+            </div>
+            <div className="pos-stat-card">
+              <div className="pos-stat-icon" style={{ background: "rgba(16,185,129,0.12)", color: "#10b981" }}>
+                <DollarSign size={18} />
+              </div>
+              <div className="pos-stat-content">
+                <div className="pos-stat-label">Total Value</div>
+                <div className="pos-stat-value">
+                  {formatUsd(paperPositions.reduce((s, p) => s + p.size * p.currentPrice, 0))}
+                </div>
+              </div>
+            </div>
+            <div className="pos-stat-card">
+              <div className="pos-stat-icon" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
+                <Activity size={18} />
+              </div>
+              <div className="pos-stat-content">
+                <div className="pos-stat-label">Paper Trades</div>
+                <div className="pos-stat-value">{paperTrades.length}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Paper tabs */}
+          <div className="pos-tabs">
+            <button className={`pos-tab ${tab === "positions" ? "active" : ""}`} onClick={() => setTab("positions")}>
+              Positions {paperPositions.length > 0 && <span className="tab-badge">{paperPositions.length}</span>}
+            </button>
+            <button className={`pos-tab ${tab === "trades" ? "active" : ""}`} onClick={() => setTab("trades")}>
+              Trade History {paperTrades.length > 0 && <span className="tab-badge">{paperTrades.length}</span>}
+            </button>
+          </div>
+
+          {/* Paper positions */}
+          {tab === "positions" && paperPositions.length === 0 && (
+            <div className="library-empty">
+              <BarChart3 size={48} strokeWidth={1} style={{ color: "var(--pb-text-muted)", marginBottom: 16 }} />
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 14 }}>No paper positions yet.</p>
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 13 }}>
+                Paper positions appear here after you run strategies in paper mode.
+              </p>
+            </div>
+          )}
+
+          {tab === "positions" && paperPositions.length > 0 && (
+            <div className="positions-grid">
+              {paperPositions.map((pp) => (
+                <div key={`${pp.strategyId}-${pp.tokenId}`} className="position-card">
+                  <div className="position-header">
+                    <div className="position-market-info">
+                      <h3 className="position-question">
+                        {pp.marketConditionId.slice(0, 12)}…
+                      </h3>
+                      <div className="position-badges">
+                        <span className="trade-side-badge paper">
+                          <FileText size={10} /> PAPER
+                        </span>
+                        <span className={`trade-side-badge ${pp.side.toLowerCase()}`}>
+                          {pp.side === "YES" ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                          {pp.side}
+                        </span>
+                        <span className="position-size">{pp.size.toFixed(2)} shares</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="position-stats">
+                    <div className="position-stat">
+                      <span className="position-stat-label">Avg Entry</span>
+                      <span className="position-stat-value">{formatUsd(pp.avgEntryPrice)}</span>
+                    </div>
+                    <div className="position-stat">
+                      <span className="position-stat-label">Current</span>
+                      <span className="position-stat-value">{formatUsd(pp.currentPrice)}</span>
+                    </div>
+                    <div className="position-stat">
+                      <span className="position-stat-label">Value</span>
+                      <span className="position-stat-value">{formatUsd(pp.size * pp.currentPrice)}</span>
+                    </div>
+                    <div className="position-stat">
+                      <span className="position-stat-label">P&L</span>
+                      <span
+                        className="position-stat-value"
+                        style={{ color: pp.unrealizedPnl >= 0 ? "#10b981" : "#ef4444" }}
+                      >
+                        {pp.unrealizedPnl >= 0 ? "+" : ""}{formatUsd(pp.unrealizedPnl)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Paper trades */}
+          {tab === "trades" && paperTrades.length === 0 && (
+            <div className="library-empty">
+              <Activity size={48} strokeWidth={1} style={{ color: "var(--pb-text-muted)", marginBottom: 16 }} />
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 14 }}>No paper trades yet.</p>
+              <p style={{ color: "var(--pb-text-muted)", fontSize: 13 }}>
+                Run a strategy in paper mode to see trades here.
+              </p>
+            </div>
+          )}
+
+          {tab === "trades" && paperTrades.length > 0 && (
+            <div className="trades-table-wrapper" style={{ margin: "0 auto", maxWidth: 900 }}>
+              <table className="trades-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Side</th>
+                    <th>Price</th>
+                    <th>Size</th>
+                    <th>Value</th>
+                    <th>Origin Node</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paperTrades.map((pt) => (
+                    <tr key={pt.id} className={`trade-row trade-${pt.side.toLowerCase()}`}>
+                      <td className="trade-time">{pt.executedAt ? timeAgo(pt.executedAt) : "—"}</td>
+                      <td>
+                        <span className={`trade-side-badge ${pt.side.toLowerCase()}`}>
+                          {pt.side === "BUY" ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                          {pt.side}
+                        </span>
+                      </td>
+                      <td className="trade-price">{formatUsd(pt.price)}</td>
+                      <td>{pt.size.toFixed(2)}</td>
+                      <td className="trade-value">{formatUsd(pt.price * pt.size)}</td>
+                      <td style={{ fontFamily: "monospace", fontSize: 11, color: "var(--pb-text-muted)" }}>
+                        {pt.originNodeId.slice(0, 8)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── LIVE MODE ──────────────────────────────────────────────── */}
+      {mode === "live" && (
+        <>
       <div className="positions-summary">
         <div className="pos-stat-card">
           <div className="pos-stat-icon" style={{ background: "rgba(99,102,241,0.12)", color: "var(--pb-accent)" }}>
@@ -375,6 +562,8 @@ export default function PositionsPage() {
             </tbody>
           </table>
         </div>
+      )}
+        </>
       )}
     </div>
   );

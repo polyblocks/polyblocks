@@ -4912,6 +4912,130 @@ body {
   font-weight: 600;
 }
 
+/* ─── Positions Mode Toggle ──────────────────────────────────────────────── */
+
+.pos-mode-toggle {
+  display: flex;
+  gap: 0;
+  background: var(--pb-surface-2);
+  border: 1px solid var(--pb-border);
+  border-radius: 10px;
+  padding: 4px;
+  width: fit-content;
+  margin-bottom: 20px;
+}
+
+.pos-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  background: transparent;
+  color: var(--pb-text-muted);
+}
+
+.pos-mode-btn:hover:not(.active) {
+  color: var(--pb-text-secondary);
+}
+
+.pos-mode-btn.active.live {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.pos-mode-btn.active.paper {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--pb-accent);
+}
+
+/* ─── Global Running Indicator Bar ──────────────────────────────────────── */
+
+.global-running-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: rgba(16, 185, 129, 0.06);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.15);
+  font-size: 12px;
+  color: #10b981;
+  animation: globalBarSlideIn 0.3s ease;
+}
+
+@keyframes globalBarSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.global-running-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: globalPulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes globalPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+}
+
+.global-running-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.global-running-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(16, 185, 129, 0.08);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.global-running-mode {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.global-running-mode.live {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.global-running-mode.paper {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--pb-accent);
+}
+
+/* Paper badge for positions page */
+.trade-side-badge.paper {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--pb-accent);
+}
+
 /* ─── Spin animation ────────────────────────────────────────────────────── */
 
 .spin {

@@ -1,11 +1,13 @@
 /**
  * CopyTradingPage — Copy Trading feature for Pro users.
  * Monitors a whale address and mirrors trades. Paper + Live modes.
+ * Uses a persistent Zustand store so it keeps running across page navigations.
  */
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
+import { useCopyTradingStore } from "../stores/copyTradingStore";
 import {
   Users,
   Crown,
@@ -22,161 +24,42 @@ import {
   Radio,
   Percent,
   XCircle,
-  Monitor,
 } from "lucide-react";
 import { Button, Input } from "@polyblocks/ui";
-
-type TradingMode = "paper" | "live";
-
-interface CopyTrade {
-  id: string;
-  time: string;
-  side: string;
-  outcome: string;
-  title: string;
-  size: number;
-  price: number;
-  status: "copied" | "skipped" | "error";
-  reason?: string;
-  mode: TradingMode;
-}
 
 export default function CopyTradingPage() {
   const navigate = useNavigate();
   const { isPro } = useAuthStore();
-  const [targetAddress, setTargetAddress] = useState("");
-  const [intervalSec, setIntervalSec] = useState(30);
-  const [maxSize, setMaxSize] = useState(50);
-  const [sizePercent, setSizePercent] = useState(100);
-  const [mode, setMode] = useState<TradingMode>("paper");
-  const [running, setRunning] = useState(false);
+
+  // Persistent store — survives navigation
+  const targetAddress = useCopyTradingStore((s) => s.targetAddress);
+  const setTargetAddress = useCopyTradingStore((s) => s.setTargetAddress);
+  const intervalSec = useCopyTradingStore((s) => s.intervalSec);
+  const setIntervalSec = useCopyTradingStore((s) => s.setIntervalSec);
+  const maxSize = useCopyTradingStore((s) => s.maxSize);
+  const setMaxSize = useCopyTradingStore((s) => s.setMaxSize);
+  const sizePercent = useCopyTradingStore((s) => s.sizePercent);
+  const setSizePercent = useCopyTradingStore((s) => s.setSizePercent);
+  const mode = useCopyTradingStore((s) => s.mode);
+  const setMode = useCopyTradingStore((s) => s.setMode);
+  const running = useCopyTradingStore((s) => s.running);
+  const start = useCopyTradingStore((s) => s.start);
+  const stop = useCopyTradingStore((s) => s.stop);
+  const clearTrades = useCopyTradingStore((s) => s.clearTrades);
+  const trades = useCopyTradingStore((s) => s.trades);
+  const status = useCopyTradingStore((s) => s.status);
+
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
   const [showCloseAllConfirm, setShowCloseAllConfirm] = useState(false);
-  const [trades, setTrades] = useState<CopyTrade[]>([]);
-  const [status, setStatus] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const seenHashesRef = useRef(new Set<string>());
-  const firstFetchRef = useRef(true);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
-  const fetchAndCopy = useCallback(async () => {
+  const handleStart = () => {
     if (!targetAddress.trim()) return;
-
-    try {
-      const url = `https://data-api.polymarket.com/activity?user=${encodeURIComponent(targetAddress.trim())}&limit=1&sortBy=TIMESTAMP&sortDirection=DESC`;
-      const res = await fetch(url);
-      const data = await res.json();
-
-      if (!Array.isArray(data) || data.length === 0) {
-        setStatus("No activity found for this address");
-        return;
-      }
-
-      const trade = data[0];
-      const txHash = trade.transactionHash || `${trade.timestamp}_${trade.conditionId}`;
-      const side = String(trade.side || "");
-      const outcome = String(trade.outcome || "");
-      const title = String(trade.title || "Unknown");
-      const size = parseFloat(String(trade.usdcSize ?? trade.size ?? "0"));
-      const price = parseFloat(String(trade.price ?? "0"));
-
-      // First fetch — just record, don't copy
-      if (firstFetchRef.current) {
-        firstFetchRef.current = false;
-        seenHashesRef.current.add(txHash);
-        setStatus(`Monitoring ${targetAddress.slice(0, 8)}… — waiting for new trades`);
-        return;
-      }
-
-      // Dedup — skip already-seen trades
-      if (seenHashesRef.current.has(txHash)) {
-        setStatus(`No new trades since last check`);
-        return;
-      }
-
-      seenHashesRef.current.add(txHash);
-
-      // Apply percentage scaling, then cap to max size
-      const scaledSize = size * (sizePercent / 100);
-      const cappedSize = Math.min(scaledSize, maxSize);
-
-      const newTrade: CopyTrade = {
-        id: txHash,
-        time: new Date().toLocaleTimeString(),
-        side,
-        outcome,
-        title,
-        size: cappedSize,
-        price,
-        status: "copied",
-        mode,
-      };
-
-      // TODO: In live mode, submit real order via API
-      // if (mode === "live") { await submitRealOrder(newTrade); }
-
-      setTrades((prev) => [newTrade, ...prev].slice(0, 50));
-      const modeLabel = mode === "live" ? "🔴 LIVE" : "📝 Paper";
-      setStatus(`🎯 ${modeLabel} Copied: ${side} ${outcome} "${title.slice(0, 30)}" — $${cappedSize.toFixed(2)} @ ${price.toFixed(4)}`);
-    } catch (err) {
-      setStatus(`❌ Error: ${(err as Error).message}`);
-    }
-  }, [targetAddress, maxSize, sizePercent, mode]);
-
-  const startCopying = useCallback(() => {
-    setRunning(true);
-    setShowLiveConfirm(false);
-    firstFetchRef.current = true;
-    seenHashesRef.current.clear();
-    setStatus(`Starting copy trading in ${mode === "live" ? "LIVE" : "paper"} mode…`);
-    fetchAndCopy();
-    timerRef.current = setInterval(fetchAndCopy, intervalSec * 1000);
-  }, [mode, intervalSec, fetchAndCopy]);
-
-  const handleStart = useCallback(() => {
-    if (!targetAddress.trim()) {
-      setStatus("Please enter a target wallet address");
-      return;
-    }
     if (mode === "live") {
       setShowLiveConfirm(true);
       return;
     }
-    startCopying();
-  }, [targetAddress, mode, startCopying]);
-
-  const handleStop = useCallback(() => {
-    setRunning(false);
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    setStatus("Copy trading stopped");
-  }, []);
-
-  const closeAllTrades = useCallback(() => {
-    // Stop copy trading if running
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    setRunning(false);
-
-    // TODO: In live mode, call API to close all open positions
-    // await fetch('/api/execution/close-all', { method: 'POST' });
-
-    setTrades([]);
-    seenHashesRef.current.clear();
-    firstFetchRef.current = true;
-    setShowCloseAllConfirm(false);
-    setStatus("⛔ All trades closed and log cleared");
-  }, []);
+    start();
+  };
 
   // ── Pro Gate ────────────────────────────────────────────────────────────
   if (!isPro()) {
@@ -185,13 +68,9 @@ export default function CopyTradingPage() {
         <div style={{ textAlign: "center" }}>
           <div
             style={{
-              width: 80,
-              height: 80,
-              borderRadius: 20,
+              width: 80, height: 80, borderRadius: 20,
               background: "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.15))",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              display: "flex", alignItems: "center", justifyContent: "center",
               margin: "0 auto 24px",
             }}
           >
@@ -203,41 +82,24 @@ export default function CopyTradingPage() {
             Copy Trading is a Pro-exclusive feature.
           </p>
           <div style={{
-            background: "var(--pb-surface-2)",
-            border: "1px solid var(--pb-border)",
-            borderRadius: 12,
-            padding: 24,
-            marginBottom: 24,
+            background: "var(--pb-surface-2)", border: "1px solid var(--pb-border)",
+            borderRadius: 12, padding: 24, marginBottom: 24,
           }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-              <div style={{ textAlign: "left" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  <CheckCircle size={14} color="#22c55e" />
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>Auto-mirror trades</span>
+              {[
+                ["Auto-mirror trades", "Instantly copy whale moves"],
+                ["Duplicate prevention", "Never re-take the same trade"],
+                ["Size capping", "Set max order size limits"],
+                ["Real-time logs", "Full trade history & status"],
+              ].map(([title, desc]) => (
+                <div key={title} style={{ textAlign: "left" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <CheckCircle size={14} color="#22c55e" />
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{title}</span>
+                  </div>
+                  <p style={{ fontSize: 11, color: "var(--pb-text-muted)", margin: 0 }}>{desc}</p>
                 </div>
-                <p style={{ fontSize: 11, color: "var(--pb-text-muted)", margin: 0 }}>Instantly copy whale moves</p>
-              </div>
-              <div style={{ textAlign: "left" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  <CheckCircle size={14} color="#22c55e" />
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>Duplicate prevention</span>
-                </div>
-                <p style={{ fontSize: 11, color: "var(--pb-text-muted)", margin: 0 }}>Never re-take the same trade</p>
-              </div>
-              <div style={{ textAlign: "left" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  <CheckCircle size={14} color="#22c55e" />
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>Size capping</span>
-                </div>
-                <p style={{ fontSize: 11, color: "var(--pb-text-muted)", margin: 0 }}>Set max order size limits</p>
-              </div>
-              <div style={{ textAlign: "left" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  <CheckCircle size={14} color="#22c55e" />
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>Real-time logs</span>
-                </div>
-                <p style={{ fontSize: 11, color: "var(--pb-text-muted)", margin: 0 }}>Full trade history & status</p>
-              </div>
+              ))}
             </div>
             <Button variant="primary" onClick={() => navigate("/pricing")}>
               <Crown size={14} />
@@ -256,13 +118,9 @@ export default function CopyTradingPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 32 }}>
         <div
           style={{
-            width: 48,
-            height: 48,
-            borderRadius: 14,
+            width: 48, height: 48, borderRadius: 14,
             background: "linear-gradient(135deg, var(--pb-accent), #8b5cf6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
           <Users size={24} color="white" />
@@ -282,29 +140,18 @@ export default function CopyTradingPage() {
       {/* Mode Toggle */}
       <div
         style={{
-          display: "flex",
-          gap: 0,
-          marginBottom: 20,
-          background: "var(--pb-surface-2)",
-          border: "1px solid var(--pb-border)",
-          borderRadius: 10,
-          padding: 4,
-          width: "fit-content",
+          display: "flex", gap: 0, marginBottom: 20,
+          background: "var(--pb-surface-2)", border: "1px solid var(--pb-border)",
+          borderRadius: 10, padding: 4, width: "fit-content",
         }}
       >
         <button
-          onClick={() => !running && setMode("paper")}
+          onClick={() => setMode("paper")}
           disabled={running}
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 20px",
-            borderRadius: 8,
-            border: "none",
-            cursor: running ? "not-allowed" : "pointer",
-            fontSize: 13,
-            fontWeight: 600,
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "8px 20px", borderRadius: 8, border: "none",
+            cursor: running ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600,
             transition: "all 0.15s ease",
             background: mode === "paper" ? "rgba(99,102,241,0.15)" : "transparent",
             color: mode === "paper" ? "var(--pb-accent)" : "var(--pb-text-muted)",
@@ -314,18 +161,12 @@ export default function CopyTradingPage() {
           Paper Trading
         </button>
         <button
-          onClick={() => !running && setMode("live")}
+          onClick={() => setMode("live")}
           disabled={running}
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 20px",
-            borderRadius: 8,
-            border: "none",
-            cursor: running ? "not-allowed" : "pointer",
-            fontSize: 13,
-            fontWeight: 600,
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "8px 20px", borderRadius: 8, border: "none",
+            cursor: running ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600,
             transition: "all 0.15s ease",
             background: mode === "live" ? "rgba(239,68,68,0.15)" : "transparent",
             color: mode === "live" ? "#ef4444" : "var(--pb-text-muted)",
@@ -336,45 +177,23 @@ export default function CopyTradingPage() {
         </button>
       </div>
 
-      {/* Live mode warning banner */}
+      {/* Live mode warning */}
       {mode === "live" && (
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "10px 16px",
-            marginBottom: 16,
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.25)",
-            borderRadius: 10,
-            fontSize: 13,
-            color: "#ef4444",
+            display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
+            marginBottom: 16, background: "rgba(239,68,68,0.08)",
+            border: "1px solid rgba(239,68,68,0.25)", borderRadius: 10, fontSize: 13, color: "#ef4444",
           }}
         >
           <AlertTriangle size={16} />
-          <span><strong>Live mode</strong> — trades will be executed with real funds on Polymarket. Make sure your API credentials are configured in Settings.</span>
+          <span><strong>Live mode</strong> — trades will be executed with real funds. Make sure your API credentials are configured in Settings.</span>
         </div>
       )}
 
       {/* Config */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 16,
-          marginBottom: 24,
-        }}
-      >
-        <div
-          style={{
-            gridColumn: "1 / -1",
-            background: "var(--pb-surface-2)",
-            border: "1px solid var(--pb-border)",
-            borderRadius: 12,
-            padding: 20,
-          }}
-        >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+        <div style={{ gridColumn: "1 / -1", background: "var(--pb-surface-2)", border: "1px solid var(--pb-border)", borderRadius: 12, padding: 20 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--pb-text-secondary)", marginBottom: 6, display: "block" }}>
             Target Wallet Address
           </label>
@@ -390,94 +209,42 @@ export default function CopyTradingPage() {
           </p>
         </div>
 
-        <div
-          style={{
-            background: "var(--pb-surface-2)",
-            border: "1px solid var(--pb-border)",
-            borderRadius: 12,
-            padding: 20,
-          }}
-        >
+        <div style={{ background: "var(--pb-surface-2)", border: "1px solid var(--pb-border)", borderRadius: 12, padding: 20 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--pb-text-secondary)", marginBottom: 6, display: "block" }}>
-            <Clock size={12} style={{ marginRight: 4 }} />
-            Check Interval (seconds)
+            <Clock size={12} style={{ marginRight: 4 }} /> Check Interval (seconds)
           </label>
-          <Input
-            type="number"
-            min={10}
-            max={300}
-            value={intervalSec}
-            onChange={(e) => setIntervalSec(Number(e.target.value))}
-            disabled={running}
-          />
+          <Input type="number" min={10} max={300} value={intervalSec} onChange={(e) => setIntervalSec(Number(e.target.value))} disabled={running} />
         </div>
 
-        <div
-          style={{
-            background: "var(--pb-surface-2)",
-            border: "1px solid var(--pb-border)",
-            borderRadius: 12,
-            padding: 20,
-          }}
-        >
+        <div style={{ background: "var(--pb-surface-2)", border: "1px solid var(--pb-border)", borderRadius: 12, padding: 20 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--pb-text-secondary)", marginBottom: 6, display: "block" }}>
-            <Shield size={12} style={{ marginRight: 4 }} />
-            Max Trade Size ($)
+            <Shield size={12} style={{ marginRight: 4 }} /> Max Trade Size ($)
           </label>
-          <Input
-            type="number"
-            min={1}
-            max={10000}
-            value={maxSize}
-            onChange={(e) => setMaxSize(Number(e.target.value))}
-            disabled={running}
-          />
+          <Input type="number" min={1} max={10000} value={maxSize} onChange={(e) => setMaxSize(Number(e.target.value))} disabled={running} />
         </div>
 
-        {/* Order Size Percentage */}
-        <div
-          style={{
-            gridColumn: "1 / -1",
-            background: "var(--pb-surface-2)",
-            border: "1px solid var(--pb-border)",
-            borderRadius: 12,
-            padding: 20,
-          }}
-        >
+        <div style={{ gridColumn: "1 / -1", background: "var(--pb-surface-2)", border: "1px solid var(--pb-border)", borderRadius: 12, padding: 20 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--pb-text-secondary)", marginBottom: 6, display: "block" }}>
-            <Percent size={12} style={{ marginRight: 4 }} />
-            Order Size — {sizePercent}% of original
+            <Percent size={12} style={{ marginRight: 4 }} /> Order Size — {sizePercent}% of original
           </label>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <input
-              type="range"
-              min={1}
-              max={200}
-              value={sizePercent}
+              type="range" min={1} max={200} value={sizePercent}
               onChange={(e) => setSizePercent(Number(e.target.value))}
               disabled={running}
-              style={{
-                flex: 1,
-                accentColor: "var(--pb-accent)",
-                height: 6,
-                cursor: running ? "not-allowed" : "pointer",
-              }}
+              style={{ flex: 1, accentColor: "var(--pb-accent)", height: 6, cursor: running ? "not-allowed" : "pointer" }}
             />
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <Input
-                type="number"
-                min={1}
-                max={200}
-                value={sizePercent}
+                type="number" min={1} max={200} value={sizePercent}
                 onChange={(e) => setSizePercent(Math.min(200, Math.max(1, Number(e.target.value))))}
-                disabled={running}
-                style={{ width: 64, textAlign: "center" }}
+                disabled={running} style={{ width: 64, textAlign: "center" }}
               />
               <span style={{ fontSize: 12, color: "var(--pb-text-muted)" }}>%</span>
             </div>
           </div>
           <p style={{ fontSize: 11, color: "var(--pb-text-muted)", margin: "6px 0 0" }}>
-            Scale the copied order size. 100% = same size as the target, 50% = half size, 200% = double.
+            Scale the copied order size. 100% = same size, 50% = half, 200% = double.
           </p>
         </div>
       </div>
@@ -494,7 +261,7 @@ export default function CopyTradingPage() {
             {mode === "live" ? "Start Live Copy Trading" : "Start Paper Copy Trading"}
           </Button>
         ) : (
-          <Button variant="danger" onClick={handleStop}>
+          <Button variant="danger" onClick={stop}>
             <Square size={14} />
             Stop
           </Button>
@@ -503,10 +270,7 @@ export default function CopyTradingPage() {
           <Button
             variant="default"
             onClick={() => setShowCloseAllConfirm(true)}
-            style={{
-              border: "1px solid rgba(239,68,68,0.3)",
-              color: "#ef4444",
-            }}
+            style={{ border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444" }}
           >
             <XCircle size={14} />
             Close All Trades
@@ -514,15 +278,9 @@ export default function CopyTradingPage() {
         )}
         {status && (
           <div style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 13,
+            display: "flex", alignItems: "center", gap: 8, fontSize: 13,
             color: status.startsWith("❌") ? "#ef4444" : status.includes("🎯") ? "#22c55e" : "var(--pb-text-secondary)",
-            padding: "0 12px",
-            background: "var(--pb-surface-2)",
-            borderRadius: 8,
-            flex: 1,
+            padding: "0 12px", background: "var(--pb-surface-2)", borderRadius: 8, flex: 1,
           }}>
             {running && !status.startsWith("❌") && <Loader2 size={14} className="spin" />}
             {status}
@@ -530,150 +288,63 @@ export default function CopyTradingPage() {
         )}
       </div>
 
-      {/* Live mode confirmation dialog */}
+      {/* Live confirm dialog */}
       {showLiveConfirm && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
           onClick={() => setShowLiveConfirm(false)}
         >
           <div
-            style={{
-              background: "var(--pb-bg-secondary)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              borderRadius: 16,
-              padding: 28,
-              maxWidth: 420,
-              width: "90%",
-              textAlign: "center",
-            }}
+            style={{ background: "var(--pb-bg-secondary)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 16, padding: 28, maxWidth: 420, width: "90%", textAlign: "center" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 16,
-                background: "rgba(239,68,68,0.12)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 16px",
-              }}
-            >
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(239,68,68,0.12)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
               <AlertTriangle size={28} color="#ef4444" />
             </div>
             <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Start Live Copy Trading?</h3>
             <p style={{ color: "var(--pb-text-muted)", fontSize: 13, marginBottom: 6, lineHeight: 1.5 }}>
               You are about to start copy trading with <strong style={{ color: "#ef4444" }}>real funds</strong>.
-              Trades will be executed on Polymarket using your configured API credentials.
             </p>
             <p style={{ color: "var(--pb-text-muted)", fontSize: 12, marginBottom: 20 }}>
               Target: <code style={{ color: "var(--pb-text-primary)" }}>{targetAddress.slice(0, 10)}…{targetAddress.slice(-6)}</code>
               {" · "}{sizePercent}% size · ${maxSize} max
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <Button variant="default" onClick={() => setShowLiveConfirm(false)}>
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={startCopying}>
-                <Radio size={14} />
-                Confirm — Go Live
+              <Button variant="default" onClick={() => setShowLiveConfirm(false)}>Cancel</Button>
+              <Button variant="danger" onClick={() => { setShowLiveConfirm(false); start(); }}>
+                <Radio size={14} /> Confirm — Go Live
               </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Close All Trades confirmation dialog */}
+      {/* Close all confirm */}
       {showCloseAllConfirm && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
           onClick={() => setShowCloseAllConfirm(false)}
         >
           <div
-            style={{
-              background: "var(--pb-bg-secondary)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              borderRadius: 16,
-              padding: 28,
-              maxWidth: 420,
-              width: "90%",
-              textAlign: "center",
-            }}
+            style={{ background: "var(--pb-bg-secondary)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 16, padding: 28, maxWidth: 420, width: "90%", textAlign: "center" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 16,
-                background: "rgba(239,68,68,0.12)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 16px",
-              }}
-            >
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(239,68,68,0.12)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
               <XCircle size={28} color="#ef4444" />
             </div>
             <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Close All Trades?</h3>
-            <p style={{ color: "var(--pb-text-muted)", fontSize: 13, marginBottom: 6, lineHeight: 1.5 }}>
-              This will <strong style={{ color: "#ef4444" }}>stop copy trading</strong> and close all tracked positions.
-              {mode === "live" && " Open live positions will be submitted for closure on Polymarket."}
-            </p>
-            <p style={{ color: "var(--pb-text-muted)", fontSize: 12, marginBottom: 20 }}>
-              {trades.length} trade{trades.length !== 1 ? "s" : ""} will be cleared from the log.
+            <p style={{ color: "var(--pb-text-muted)", fontSize: 13, marginBottom: 20, lineHeight: 1.5 }}>
+              This will stop copy trading and clear all tracked trades.
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <Button variant="default" onClick={() => setShowCloseAllConfirm(false)}>
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={closeAllTrades}>
-                <XCircle size={14} />
-                Close All Trades
+              <Button variant="default" onClick={() => setShowCloseAllConfirm(false)}>Cancel</Button>
+              <Button variant="danger" onClick={() => { clearTrades(); setShowCloseAllConfirm(false); }}>
+                <XCircle size={14} /> Close All
               </Button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Browser dependency notice */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "10px 16px",
-          marginBottom: 16,
-          background: "rgba(245,158,11,0.06)",
-          border: "1px solid rgba(245,158,11,0.2)",
-          borderRadius: 10,
-          fontSize: 12,
-          color: "var(--pb-text-muted)",
-        }}
-      >
-        <Monitor size={14} color="#f59e0b" style={{ flexShrink: 0 }} />
-        <span>
-          <strong style={{ color: "#f59e0b" }}>Browser required</strong> — Copy trading runs in your browser tab.
-          It will stop if you close the tab or navigate away. Keep this page open while trading.
-        </span>
-      </div>
 
       {/* Feature badges */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
@@ -686,7 +357,7 @@ export default function CopyTradingPage() {
           {mode === "live" ? "Live mode" : "Paper mode"}
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, background: "rgba(16,185,129,0.1)", color: "#10b981", padding: "4px 10px", borderRadius: 999 }}>
-          <Zap size={10} /> Real-time monitoring
+          <Zap size={10} /> Persists across pages
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, background: "rgba(99,102,241,0.1)", color: "var(--pb-accent)", padding: "4px 10px", borderRadius: 999 }}>
           <Shield size={10} /> Duplicate prevention
@@ -697,23 +368,8 @@ export default function CopyTradingPage() {
       </div>
 
       {/* Trade log */}
-      <div
-        style={{
-          background: "var(--pb-surface-2)",
-          border: "1px solid var(--pb-border)",
-          borderRadius: 12,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 16px",
-            borderBottom: "1px solid var(--pb-border)",
-          }}
-        >
+      <div style={{ background: "var(--pb-surface-2)", border: "1px solid var(--pb-border)", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--pb-border)" }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>Trade Log</span>
           <span style={{ fontSize: 11, color: "var(--pb-text-muted)" }}>
             {trades.length} trade{trades.length !== 1 ? "s" : ""} copied
@@ -722,9 +378,7 @@ export default function CopyTradingPage() {
 
         {trades.length === 0 ? (
           <div style={{ padding: 32, textAlign: "center", color: "var(--pb-text-muted)", fontSize: 13 }}>
-            {running
-              ? "Waiting for new trades from target wallet…"
-              : "Start copy trading to see trades here"}
+            {running ? "Waiting for new trades from target wallet…" : "Start copy trading to see trades here"}
           </div>
         ) : (
           <div style={{ maxHeight: 400, overflowY: "auto" }}>
@@ -732,37 +386,23 @@ export default function CopyTradingPage() {
               <div
                 key={t.id}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "10px 16px",
-                  borderBottom: "1px solid var(--pb-border)",
-                  fontSize: 12,
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "10px 16px", borderBottom: "1px solid var(--pb-border)", fontSize: 12,
                 }}
               >
                 <span style={{ color: "var(--pb-text-muted)", width: 70, flexShrink: 0 }}>{t.time}</span>
-                <span
-                  style={{
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                    fontSize: 10,
-                    fontWeight: 600,
-                    background: t.mode === "live" ? "rgba(239,68,68,0.12)" : "rgba(99,102,241,0.12)",
-                    color: t.mode === "live" ? "#ef4444" : "var(--pb-accent)",
-                  }}
-                >
+                <span style={{
+                  padding: "2px 6px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+                  background: t.mode === "live" ? "rgba(239,68,68,0.12)" : "rgba(99,102,241,0.12)",
+                  color: t.mode === "live" ? "#ef4444" : "var(--pb-accent)",
+                }}>
                   {t.mode === "live" ? "LIVE" : "PAPER"}
                 </span>
-                <span
-                  style={{
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    background: t.side === "BUY" ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
-                    color: t.side === "BUY" ? "#10b981" : "#ef4444",
-                  }}
-                >
+                <span style={{
+                  padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600,
+                  background: t.side === "BUY" ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+                  color: t.side === "BUY" ? "#10b981" : "#ef4444",
+                }}>
                   {t.side}
                 </span>
                 <span style={{ fontWeight: 600, color: "var(--pb-accent)" }}>{t.outcome}</span>

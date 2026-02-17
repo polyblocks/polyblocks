@@ -1,12 +1,43 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X, Briefcase } from "lucide-react";
+import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X, Briefcase, Radio, Loader2 } from "lucide-react";
 import { useAuthStore } from "../stores/authStore";
+import { useCopyTradingStore } from "../stores/copyTradingStore";
+
+interface RunningStrategy {
+  strategyId: string;
+  strategyName: string;
+  mode: "paper" | "live";
+}
 
 export default function Layout() {
   const { user, isPro, logout } = useAuthStore();
   const navigate = useNavigate();
   const [showPlans, setShowPlans] = useState(false);
+  const copyRunning = useCopyTradingStore((s) => s.running);
+  const copyMode = useCopyTradingStore((s) => s.mode);
+  const copyTarget = useCopyTradingStore((s) => s.targetAddress);
+  const [runningStrategies, setRunningStrategies] = useState<RunningStrategy[]>([]);
+
+  // Poll for running strategies
+  useEffect(() => {
+    let mounted = true;
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/execution/schedule/running");
+        if (res.ok) {
+          const data = await res.json();
+          if (mounted) setRunningStrategies(data.running || []);
+        }
+      } catch { /* ignore */ }
+    };
+    poll();
+    const iv = setInterval(poll, 10_000);
+    return () => { mounted = false; clearInterval(iv); };
+  }, []);
+
+  const totalRunning = runningStrategies.length + (copyRunning ? 1 : 0);
+  const showGlobalBar = totalRunning > 0;
 
   const handleLogout = () => {
     logout();
@@ -185,6 +216,35 @@ export default function Layout() {
         )}
       </nav>
       <main className="app-main">
+        {showGlobalBar && (
+          <div className="global-running-bar">
+            <div className="global-running-dot" />
+            <Loader2 size={12} className="spin" />
+            <span className="global-running-label">
+              {runningStrategies.map((rs) => (
+                <span key={rs.strategyId} className="global-running-item">
+                  <Radio size={10} />
+                  {rs.strategyName || rs.strategyId.slice(0, 8)}
+                  <span className={`global-running-mode ${rs.mode}`}>
+                    {rs.mode === "live" ? "LIVE" : "PAPER"}
+                  </span>
+                </span>
+              ))}
+              {copyRunning && (
+                <span className="global-running-item">
+                  <Users size={10} />
+                  Copy Trading
+                  <span style={{ fontFamily: "monospace", fontSize: 10, opacity: 0.7 }}>
+                    {copyTarget.slice(0, 6)}…
+                  </span>
+                  <span className={`global-running-mode ${copyMode}`}>
+                    {copyMode === "live" ? "LIVE" : "PAPER"}
+                  </span>
+                </span>
+              )}
+            </span>
+          </div>
+        )}
         <Outlet />
       </main>
     </div>
