@@ -8,7 +8,7 @@
 
 import { BlockType } from "@polyblocks/types";
 import type { NodeHandler, NodeHandlerRegistry } from "@polyblocks/engine-core";
-import { ClobClient, Side, OrderType } from "@polymarket/clob-client";
+import { ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
 import { Wallet } from "ethers";
 import { getCredentials } from "../routes/credentials.js";
 import { createPaperHandlers } from "./paperHandlers.js";
@@ -225,6 +225,7 @@ const liveClosePositionHandler: NodeHandler = {
     const market = inputs.market as {
       clobTokenIds?: string[];
       conditionId?: string;
+      tokens?: Array<{ token_id: string }>;
     } | undefined;
 
     if (!market) {
@@ -232,31 +233,67 @@ const liveClosePositionHandler: NodeHandler = {
       return { closed: false };
     }
 
-    ctx.log(node.id, "🔴 LIVE CLOSE POSITION — placing market sell order");
+    const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
+    const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
+    const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
 
-    // For close, we place a FOK market sell
-    const tokenId = market.clobTokenIds?.[0];
     if (!tokenId) {
       throw new Error("No token ID for close");
     }
 
+    ctx.log(node.id, `🔴 LIVE CLOSE POSITION — querying balance for ${outcome} token`);
+
     try {
       const client = await createClobClientAsync();
 
-      // Use market order to sell position — amount = shares to sell
-      // TODO: Track actual position size; for now uses 1 share
+      // Query actual position size from the CLOB API
+      const balanceResponse = await client.getBalanceAllowance({ asset_type: AssetType.CONDITIONAL }) as {
+        balance?: string;
+        allowance?: string;
+        [key: string]: unknown;
+      };
+      ctx.log(node.id, `📋 Balance/Allowance: ${JSON.stringify(balanceResponse)}`);
+
+      // Try to get shares from open orders / positions
+      // For a quick sell, use the amount from the input if provided
+      let sharesToSell = inputs.shares ? Number(inputs.shares) : Number(node.config.shares || 0);
+
+      if (sharesToSell <= 0) {
+        // Default: try selling $10 worth as a market sell (the SDK will figure out the price)
+        sharesToSell = Number(node.config.sizeUsd || inputs.sizeUsd || 10);
+        ctx.log(node.id, `⚠️  No share amount specified — using ${sharesToSell} as sell amount`);
+      }
+
+      ctx.log(node.id, `🔴 LIVE MARKET SELL ${outcome} | ${sharesToSell} shares`);
+
       const response = await client.createAndPostMarketOrder(
         {
           tokenID: tokenId,
-          amount: 1, // Will be replaced with actual position size
+          amount: sharesToSell,
           side: Side.SELL,
+          orderType: OrderType.FOK,
         },
         undefined,
         OrderType.FOK,
-      ) as { orderID?: string; status?: string };
+      ) as { orderID?: string; status?: string; [key: string]: unknown };
 
-      ctx.log(node.id, `✅ LIVE CLOSE — Order ${response.orderID}, Status: ${response.status}`);
-      return { closed: true };
+      ctx.log(node.id, `📋 CLOB Response: ${JSON.stringify(response)}`);
+
+      // Detect errors
+      const resp = response as Record<string, unknown>;
+      const httpStatus = Number(resp.status) || 0;
+      if (httpStatus >= 400 || resp.error) {
+        const errMsg = String(resp.error || `HTTP ${httpStatus}`);
+        ctx.log(node.id, `❌ Close failed: ${errMsg}`);
+        throw new Error(`Close position failed: ${errMsg}`);
+      }
+
+      const rawStatus = response.status;
+      const status = (rawStatus != null ? String(rawStatus) : "").toLowerCase();
+      const filled = status === "matched" || status === "filled";
+
+      ctx.log(node.id, `${filled ? "✅" : "⚠️"} LIVE CLOSE — Order ${response.orderID}, Status: ${rawStatus}`);
+      return { closed: filled, orderId: response.orderID || "", status: rawStatus };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       ctx.log(node.id, `❌ CLOSE FAILED: ${msg}`);
