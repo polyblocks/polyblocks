@@ -1,0 +1,17 @@
+name = "polyblocks-clob-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# Force the worker to run in EU (Ireland / eu-west-1)
+[placement]
+mode = "smart"
+
+# You can also pin to a specific colo if smart placement doesn't work:
+# [triggers]
+# crons = []
+
+[vars]
+CLOB_TARGET = "https://clob.polymarket.com"
+
+# Optional: restrict access to your Heroku server only
+# API_KEY = "your-secret-key-here"

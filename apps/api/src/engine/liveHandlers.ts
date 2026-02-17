@@ -14,7 +14,7 @@ import { getCredentials } from "../routes/credentials.js";
 import { createPaperHandlers } from "./paperHandlers.js";
 import { builderConfig } from "../builderConfig.js";
 
-const CLOB_HOST = "https://clob.polymarket.com";
+const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
 const CHAIN_ID = 137;
 
 async function createClobClientAsync(userId?: string): Promise<ClobClient> {
