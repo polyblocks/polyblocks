@@ -22,7 +22,7 @@ import {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const PAYMENT_WALLET = "0x06f344E8805Ce78e62699b46e3d8BC78a6c1a35f";
-const PAYMENT_AMOUNT = "7"; // $7 USDC
+const PAYMENT_AMOUNT = "1"; // $1 USDC
 const CHAIN = "Polygon";
 const CHAIN_ID_HEX = "0x89"; // 137 in hex (Polygon mainnet)
 const CHAIN_ID_DEC = 137;
@@ -334,7 +334,9 @@ export default function PricingPage() {
         <div className="pricing-page-header">
           <Crown size={24} />
           <h2>Upgrade to Pro</h2>
-          <p>$7/month — Pay with USDC on Polygon</p>
+          <p>
+            <span className="pb-price-old">$7</span> <span className="pb-price-new">$1</span>/month — Pay with USDC on Polygon
+          </p>
         </div>
 
         <div className="pricing-page-body">

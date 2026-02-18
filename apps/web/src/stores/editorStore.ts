@@ -332,7 +332,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   selectEdge: (edgeId) => {
-    set({ selectedEdgeId: edgeId, selectedNodeId: null });
+    if (edgeId) {
+      set({ selectedEdgeId: edgeId, selectedNodeId: null });
+      return;
+    }
+    set({ selectedEdgeId: null });
   },
 
   removeEdge: (edgeId) => {

@@ -168,7 +168,7 @@ export default function Layout() {
                   <div className={`nav-plan-item pro ${isPro() ? "current" : ""}`}>
                     <div className="nav-plan-name">
                       <Zap size={13} />
-                      Pro — $7/mo
+                      Pro — <span className="pb-price-old">$7</span> <span className="pb-price-new">$1</span>/mo
                     </div>
                     <div className="nav-plan-desc">Live trading, copy trading, priority support</div>
                     {isPro() ? (

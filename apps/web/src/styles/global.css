@@ -3228,6 +3228,22 @@ body {
   font-weight: 800;
 }
 
+.price-amount.pb-price-old {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.pb-price-old {
+  text-decoration: line-through;
+  opacity: 0.55;
+  color: var(--pb-text-muted);
+}
+
+.pb-price-new {
+  color: var(--pb-accent);
+  font-weight: 800;
+}
+
 .price-period {
   font-size: 14px;
   color: var(--pb-text-muted);

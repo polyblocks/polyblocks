@@ -227,6 +227,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function PositionsPage() {
+  const paperMaintenance = true;
   const [mode, setMode] = useState<"live" | "paper">("live");
   const [positions, setPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -720,10 +721,10 @@ export default function PositionsPage() {
   }, [userId, token, processTradesToLots, paperLoaded]);
 
   useEffect(() => {
-    if (mode === "paper") {
+    if (mode === "paper" && !paperMaintenance) {
       fetchPaperData();
     }
-  }, [mode, fetchPaperData]);
+  }, [mode, paperMaintenance, fetchPaperData]);
 
   const fetchPositions = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -761,9 +762,10 @@ export default function PositionsPage() {
   }, []);
 
   useEffect(() => {
+    if (mode !== "live") return;
     fetchPositions();
     fetchTrades();
-  }, [fetchPositions, fetchTrades]);
+  }, [mode, fetchPositions, fetchTrades]);
 
   // Calculate live stats (and lots) when trades/positions change
   useEffect(() => {
@@ -937,6 +939,7 @@ export default function PositionsPage() {
 
   // Auto-refresh every 5 seconds
   useEffect(() => {
+    if (mode === "paper" && paperMaintenance) return;
     const interval = setInterval(() => {
       if (mode === "live") {
         fetchPositions({ silent: true });
@@ -946,7 +949,7 @@ export default function PositionsPage() {
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [mode, fetchPositions, fetchTrades, fetchPaperData]);
+  }, [mode, paperMaintenance, fetchPositions, fetchTrades, fetchPaperData]);
 
   const handleClose = async (pos: Position) => {
     if (!confirm(`Close ${pos.size.toFixed(2)} shares of "${pos.question || pos.conditionId}" (${pos.side})?`)) return;
@@ -1019,6 +1022,43 @@ export default function PositionsPage() {
   })();
   const displayedPositions = positionView === "open" ? openPositions : closedPositions;
 
+  if (mode === "paper" && paperMaintenance) {
+    return (
+      <div className="dashboard">
+        <div className="dashboard-hero" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div>
+            <h1>Positions</h1>
+            <p>Track live and paper positions, PnL, and trade history.</p>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="default" onClick={() => setMode("live")}>
+              <Radio size={14} />
+              Live
+            </Button>
+            <Button variant="primary" title="Paper positions are under maintenance">
+              <FileText size={14} />
+              Paper (Maintenance)
+            </Button>
+          </div>
+        </div>
+
+        <div className="pb-card" style={{ padding: 22 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <AlertCircle size={18} color="#f59e0b" />
+            <div style={{ fontWeight: 700, fontSize: 16 }}>Paper Positions are under maintenance</div>
+          </div>
+          <div style={{ color: "var(--pb-text-muted)", fontSize: 13, marginBottom: 14 }}>
+            Paper trading position history is temporarily disabled. Live positions and trade history are still available.
+          </div>
+          <Button variant="primary" onClick={() => setMode("live")}>
+            <Radio size={14} />
+            View Live Positions
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard">
       <div className="dashboard-hero" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
@@ -1033,7 +1073,7 @@ export default function PositionsPage() {
           </Button>
           <Button variant={mode === "paper" ? "primary" : "default"} onClick={() => setMode("paper")}>
             <FileText size={14} />
-            Paper
+            {paperMaintenance ? "Paper (Maintenance)" : "Paper"}
           </Button>
         </div>
       </div>
