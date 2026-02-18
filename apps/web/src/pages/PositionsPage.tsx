@@ -769,7 +769,7 @@ export default function PositionsPage() {
   useEffect(() => {
     if (trades.length === 0) return;
 
-    const { lotsMap, realizedPnl, wins, losses, history, historyTimes } = processTradesToLots(trades);
+    const { lotsMap, realizedPnl, wins, losses, volume, history, historyTimes } = processTradesToLots(trades);
     const tradeMetaByKey = new Map<string, { question?: string; slug?: string; image?: string }>();
     const lastTradeByKey = new Map<string, Trade>();
     trades.forEach(t => {
@@ -1285,5 +1285,6 @@ export default function PositionsPage() {
     </div>
   );
 }
+
 
 
