@@ -142,9 +142,10 @@ function ManualFireButton() {
   );
 }
 
-function PolyblockNode({ data, selected }: NodeProps) {
+function PolyblockNode({ id, data, selected }: NodeProps) {
   const blockData = data as unknown as PolyblockData;
   const def = BLOCK_REGISTRY[blockData.blockType];
+  const selectNode = useEditorStore((s) => s.selectNode);
 
   if (!def) return <div className="pb-node">Unknown block</div>;
 
@@ -155,6 +156,12 @@ function PolyblockNode({ data, selected }: NodeProps) {
     <div
       className={`pb-node ${selected ? "selected" : ""}`}
       style={{ borderColor: selected ? def.color : undefined }}
+      onMouseDown={(e) => {
+        // Use mousedown (fires before React Flow processes the event)
+        // to immediately set selectedNodeId in the store.
+        e.stopPropagation();
+        selectNode(id);
+      }}
     >
       {/* Category accent bar */}
       <div className="pb-node-accent" style={{ background: def.color }} />
