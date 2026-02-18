@@ -24,7 +24,10 @@ import { PaperTrade, PaperPosition } from "@polyblocks/types";
 interface EnrichedPaperPosition extends PaperPosition {
   question?: string;
   image?: string;
+  active?: boolean;
+  closed?: boolean;
 }
+
 
 function formatTimeLabel(iso: string): string {
   if (!iso) return "";
@@ -352,7 +355,7 @@ export default function PositionsPage() {
       lotsMap.set(key, lots);
     }
 
-    return { lotsMap, realizedPnl, wins, losses, volume, history, historyTimes };
+    return { lotsMap, realizedPnl, wins, losses, history, historyTimes };
   }, [liveSessionStart]);
 
   const handlePaperClose = async (pos: EnrichedPaperPosition) => {
@@ -396,12 +399,14 @@ export default function PositionsPage() {
       await fetch(`/api/paper-trades/all?userId=${userId}`, { method: "DELETE", headers });
       setPaperTrades([]);
       setPaperPositions([]);
+      const nowIso = new Date().toISOString();
       setPaperStats({
         winRate: 0,
         totalPnl: 0,
         bestTrade: 0,
         worstTrade: 0,
-        history: [0],
+        history: [0, 0],
+        historyTimes: [nowIso, nowIso],
       });
     } catch {
       alert("Failed to reset stats");
@@ -503,7 +508,7 @@ export default function PositionsPage() {
       setPaperTrades(allTrades);
 
       // Process trades to lots (FIFO)
-      const { lotsMap, realizedPnl, wins, losses, volume, history, historyTimes } = processTradesToLots(allTrades);
+      const { lotsMap, realizedPnl, wins, losses, history, historyTimes } = processTradesToLots(allTrades);
       let resolutionWins = 0;
       let resolutionLosses = 0;
 
@@ -764,7 +769,7 @@ export default function PositionsPage() {
   useEffect(() => {
     if (trades.length === 0) return;
 
-    const { lotsMap, realizedPnl, wins, losses, volume, history, historyTimes } = processTradesToLots(trades);
+    const { lotsMap, realizedPnl, wins, losses, history, historyTimes } = processTradesToLots(trades);
     const tradeMetaByKey = new Map<string, { question?: string; slug?: string; image?: string }>();
     const lastTradeByKey = new Map<string, Trade>();
     trades.forEach(t => {
@@ -1280,3 +1285,5 @@ export default function PositionsPage() {
     </div>
   );
 }
+
+

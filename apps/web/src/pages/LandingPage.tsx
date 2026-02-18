@@ -25,7 +25,6 @@ import {
   Globe,
   Bot,
   Sparkles,
-  Activity,
   Target,
   Workflow,
   BadgeCheck,
@@ -746,5 +745,6 @@ export default function LandingPage() {
     </div>
   );
 }
+
 
 
