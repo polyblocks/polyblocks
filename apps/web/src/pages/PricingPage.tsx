@@ -334,9 +334,12 @@ export default function PricingPage() {
         <div className="pricing-page-header">
           <Crown size={24} />
           <h2>Upgrade to Pro</h2>
-          <p>
-            <span className="pb-price-old">$7</span> <span className="pb-price-new">$1</span>/month — Pay with USDC on Polygon
-          </p>
+          <div className="pricing-price-bump">
+            <span className="pb-price-old">$7</span>
+            <span className="pb-price-new">$1</span>
+            <span className="pricing-price-period">/month</span>
+          </div>
+          <p>Pay with USDC on Polygon</p>
         </div>
 
         <div className="pricing-page-body">

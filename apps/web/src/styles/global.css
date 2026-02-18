@@ -4062,6 +4062,28 @@ body {
   color: var(--pb-text-secondary);
 }
 
+.pricing-price-bump {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.pricing-price-bump .pb-price-old {
+  font-size: 26px;
+}
+
+.pricing-price-bump .pb-price-new {
+  font-size: 44px;
+  line-height: 1;
+}
+
+.pricing-price-period {
+  font-size: 14px;
+  color: var(--pb-text-muted);
+}
+
 .pricing-page-body {
   padding: 24px;
   display: flex;

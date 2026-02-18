@@ -37,7 +37,6 @@ export default function EditorPage() {
   const selectedEdgeId = useEditorStore((s) => s.selectedEdgeId);
   const showLogDrawer = useEditorStore((s) => s.showLogDrawer);
   const showPropertiesPanel = useEditorStore((s) => s.showPropertiesPanel);
-  const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
   const strategyId = useEditorStore((s) => s.strategyId);
   const isRunning = useEditorStore((s) => s.isRunning);
   const paperRun = useEditorStore((s) => s.paperRun);
