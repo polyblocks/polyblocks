@@ -142,10 +142,9 @@ function ManualFireButton() {
   );
 }
 
-function PolyblockNode({ id, data, selected }: NodeProps) {
+function PolyblockNode({ data, selected }: NodeProps) {
   const blockData = data as unknown as PolyblockData;
   const def = BLOCK_REGISTRY[blockData.blockType];
-  const selectNode = useEditorStore((s) => s.selectNode);
 
   if (!def) return <div className="pb-node">Unknown block</div>;
 
@@ -156,7 +155,6 @@ function PolyblockNode({ id, data, selected }: NodeProps) {
     <div
       className={`pb-node ${selected ? "selected" : ""}`}
       style={{ borderColor: selected ? def.color : undefined }}
-      onClick={() => selectNode(id)}
     >
       {/* Category accent bar */}
       <div className="pb-node-accent" style={{ background: def.color }} />

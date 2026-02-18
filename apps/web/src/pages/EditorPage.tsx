@@ -114,12 +114,6 @@ export default function EditorPage() {
     [selectNode, selectEdge],
   );
 
-  const onPaneClick = useCallback(() => {
-    selectNode(null);
-    selectEdge(null);
-    setEdgeMenu(null);
-  }, [selectNode, selectEdge]);
-
   const onEdgeClick = useCallback(
     (_: React.MouseEvent, edge: { id: string }) => {
       selectEdge(edge.id);
@@ -177,7 +171,6 @@ export default function EditorPage() {
             onSelectionChange={onSelectionChange}
             onEdgeClick={onEdgeClick}
             onEdgeContextMenu={onEdgeContextMenu}
-            onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
