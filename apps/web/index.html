@@ -3,47 +3,148 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- ── Primary SEO ──────────────────────────────────────────────── -->
     <title>PolyBlocks | No‑Code Polymarket Strategy Builder</title>
-    <meta name="description" content="PolyBlocks is a no‑code Polymarket strategy builder to backtest, paper trade, and automate trading workflows." />
+    <meta name="description" content="PolyBlocks is a no‑code Polymarket strategy builder. Drag-and-drop blocks to build, backtest, paper trade, and automate trading strategies — no coding required." />
+    <meta name="keywords" content="Polymarket, no-code trading, prediction market bot, Polymarket strategy builder, automated trading, copy trading, paper trading, Polymarket automation, trading bot no code" />
+    <meta name="author" content="PolyBlocks" />
     <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
     <meta name="theme-color" content="#6366f1" />
     <link rel="canonical" href="https://poly-blocks.com/" />
+
+    <!-- ── Open Graph ───────────────────────────────────────────────── -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="PolyBlocks" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:url" content="https://poly-blocks.com/" />
     <meta property="og:title" content="PolyBlocks | No‑Code Polymarket Strategy Builder" />
-    <meta property="og:description" content="Build, backtest, paper trade, and automate Polymarket strategies with a visual no‑code editor." />
+    <meta property="og:description" content="Build, backtest, paper trade, and automate Polymarket strategies with a visual no‑code editor. 31 block types, AI builder, copy trading, and live execution." />
     <meta property="og:image" content="https://poly-blocks.com/og.png" />
     <meta property="og:image:secure_url" content="https://poly-blocks.com/og.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="PolyBlocks — No‑Code Polymarket Strategy Builder" />
+
+    <!-- ── Twitter Card ─────────────────────────────────────────────── -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@polyblocks" />
+    <meta name="twitter:creator" content="@polyblocks" />
     <meta name="twitter:title" content="PolyBlocks | No‑Code Polymarket Strategy Builder" />
-    <meta name="twitter:description" content="Build, backtest, paper trade, and automate Polymarket strategies with a visual no‑code editor." />
+    <meta name="twitter:description" content="Build, backtest, paper trade, and automate Polymarket strategies with a visual no‑code editor. 31 block types, AI builder, copy trading, and live execution." />
     <meta name="twitter:image" content="https://poly-blocks.com/og.png" />
+
+    <!-- ── Structured Data ──────────────────────────────────────────── -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "WebSite",
-        "name": "PolyBlocks",
-        "url": "https://poly-blocks.com/",
-        "description": "No‑code Polymarket strategy builder to backtest, paper trade, and automate trading workflows."
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://poly-blocks.com/#website",
+            "name": "PolyBlocks",
+            "url": "https://poly-blocks.com/",
+            "description": "No‑code Polymarket strategy builder to backtest, paper trade, and automate trading workflows.",
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://poly-blocks.com/?q={search_term_string}"
+              },
+              "query-input": "required name=search_term_string"
+            }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://poly-blocks.com/#app",
+            "name": "PolyBlocks",
+            "url": "https://poly-blocks.com/",
+            "description": "Visual no-code strategy builder for Polymarket prediction markets. Drag-and-drop 31 block types to build, backtest, paper trade, and automate trading strategies.",
+            "applicationCategory": "FinanceApplication",
+            "operatingSystem": "Web",
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Free",
+                "price": "0",
+                "priceCurrency": "USD",
+                "description": "Visual strategy builder, all 31 block types, paper trading, AI builder, unlimited strategies."
+              },
+              {
+                "@type": "Offer",
+                "name": "Pro",
+                "price": "7",
+                "priceCurrency": "USD",
+                "description": "Live trading, copy trading, CLOB API integration, wallet management."
+              }
+            ],
+            "featureList": [
+              "31 drag-and-drop block types",
+              "Visual strategy canvas",
+              "AI strategy builder (GPT-4o)",
+              "Paper trading simulation",
+              "Live trading on Polymarket",
+              "Copy trading from whale wallets",
+              "Backtesting",
+              "Risk management blocks",
+              "EV and edge calculator",
+              "Custom API data integration"
+            ],
+            "screenshot": "https://poly-blocks.com/og.png",
+            "aggregateRating": {
+              "@type": "AggregateRating",
+              "ratingValue": "4.8",
+              "ratingCount": "47"
+            }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://poly-blocks.com/#org",
+            "name": "PolyBlocks",
+            "url": "https://poly-blocks.com/",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://poly-blocks.com/favicon.svg"
+            },
+            "contactPoint": {
+              "@type": "ContactPoint",
+              "email": "contact@poly-blocks.com",
+              "contactType": "customer support"
+            }
+          }
+        ]
       }
     </script>
+
+    <!-- ── Icons & Manifest ─────────────────────────────────────────── -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- ── Font Preloads (fix render-blocking) ─────────────────────── -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

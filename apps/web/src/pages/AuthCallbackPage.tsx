@@ -19,13 +19,13 @@ export default function AuthCallbackPage() {
 
       if (err) {
         setError(err);
-        setTimeout(() => navigate("/landing"), 3000);
+        setTimeout(() => navigate("/"), 3000);
         return;
       }
 
       if (!token) {
         setError("No authentication token received.");
-        setTimeout(() => navigate("/landing"), 3000);
+        setTimeout(() => navigate("/"), 3000);
         return;
       }
 
@@ -48,10 +48,10 @@ export default function AuthCallbackPage() {
         localStorage.setItem("polyblocks_token", data.token || token);
         useAuthStore.setState({ user: data.user, token: data.token || token, initialized: true });
 
-        navigate("/");
+        navigate("/dashboard");
       } catch (err) {
         setError("Authentication failed. Please try again.");
-        setTimeout(() => navigate("/landing"), 3000);
+        setTimeout(() => navigate("/"), 3000);
       }
     };
 

@@ -1,5 +1,5 @@
 /**
- * AuthGuard — wraps protected routes. Redirects to /landing if not logged in.
+ * AuthGuard — wraps protected routes. Redirects to / (landing) if not logged in.
  */
 
 import { Navigate, Outlet } from "react-router-dom";
@@ -18,7 +18,7 @@ export default function AuthGuard() {
   }
 
   if (!user) {
-    return <Navigate to="/landing" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <Outlet />;

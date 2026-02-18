@@ -25,13 +25,14 @@ export default function App() {
   return (
     <Routes>
       {/* Public routes — no auth required */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/landing" element={<LandingPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
       {/* Protected routes — must be logged in */}
       <Route element={<AuthGuard />}>
         <Route element={<Layout />}>
-          <Route path="/" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/editor/:strategyId" element={<EditorPage />} />
           <Route path="/templates" element={<TemplatesPage />} />

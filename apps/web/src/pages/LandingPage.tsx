@@ -56,7 +56,7 @@ export default function LandingPage() {
 
   const handleStart = () => {
     if (isLoggedIn()) {
-      navigate("/");
+      navigate("/dashboard");
     } else {
       setShowAuthForm(true);
     }
@@ -71,14 +71,14 @@ export default function LandingPage() {
       if (result.error) {
         setAuthError(result.error);
       } else {
-        navigate("/");
+        navigate("/dashboard");
       }
     } else {
       const result = await loginWithEmail(email, password);
       if (result.error) {
         setAuthError(result.error);
       } else {
-        navigate("/");
+        navigate("/dashboard");
       }
     }
   };
