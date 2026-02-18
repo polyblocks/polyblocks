@@ -42,6 +42,8 @@ export default function EditorPage() {
   const paperRun = useEditorStore((s) => s.paperRun);
 
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
+  // Flag to prevent onPaneClick from clearing selection right after a node click
+  const nodeJustClicked = useRef(false);
 
   // Edge context menu state
   const [edgeMenu, setEdgeMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
@@ -97,6 +99,7 @@ export default function EditorPage() {
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      nodeJustClicked.current = true;
       selectNode(node.id);
       selectEdge(null);
       setEdgeMenu(null);
@@ -105,6 +108,10 @@ export default function EditorPage() {
   );
 
   const onPaneClick = useCallback(() => {
+    if (nodeJustClicked.current) {
+      nodeJustClicked.current = false;
+      return; // suppress — node click already handled selection
+    }
     selectNode(null);
     selectEdge(null);
     setEdgeMenu(null);
