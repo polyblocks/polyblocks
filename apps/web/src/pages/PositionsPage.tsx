@@ -355,7 +355,7 @@ export default function PositionsPage() {
       lotsMap.set(key, lots);
     }
 
-    return { lotsMap, realizedPnl, wins, losses, history, historyTimes };
+    return { lotsMap, realizedPnl, wins, losses, volume, history, historyTimes };
   }, [liveSessionStart]);
 
   const handlePaperClose = async (pos: EnrichedPaperPosition) => {
@@ -1285,6 +1285,7 @@ export default function PositionsPage() {
     </div>
   );
 }
+
 
 
 
