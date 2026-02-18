@@ -9,7 +9,7 @@
     "start": "node apps/api/dist/server.js",
     "lint": "turbo lint",
     "clean": "turbo clean",
-    "heroku-postbuild": "corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install && pnpm run clean && pnpm run build"
+    "heroku-postbuild": "pnpm run clean && pnpm run build"
   },
   "engines": {
     "node": "22.x"
@@ -20,3 +20,4 @@
   },
   "packageManager": "pnpm@9.15.0"
 }
+
