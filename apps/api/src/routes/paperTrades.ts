@@ -110,7 +110,7 @@ export async function registerPaperTradeRoutes(app: FastifyInstance) {
                 strategyId,
                 marketConditionId: t.marketConditionId,
                 tokenId: t.tokenId,
-                side: t.side,
+                side: t.side as "BUY" | "SELL",
                 price: t.price,
                 size: t.size,
                 executedAt: t.executedAt,
@@ -200,3 +200,5 @@ export async function registerPaperTradeRoutes(app: FastifyInstance) {
         },
     );
 }
+
+
