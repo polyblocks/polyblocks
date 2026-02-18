@@ -12,8 +12,7 @@
     "heroku-postbuild": "corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install && pnpm run clean && pnpm run build"
   },
   "engines": {
-    "node": "22.x",
-    
+    "node": "22.x"
   },
   "devDependencies": {
     "turbo": "^2.4.0",
@@ -21,6 +20,3 @@
   },
   "packageManager": "pnpm@9.15.0"
 }
-
-
-
