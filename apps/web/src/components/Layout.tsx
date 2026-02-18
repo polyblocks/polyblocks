@@ -61,7 +61,7 @@ export default function Layout() {
 
   const handleLogout = () => {
     logout();
-    navigate("/landing");
+    navigate("/");
   };
 
   return (
@@ -75,7 +75,7 @@ export default function Layout() {
           </svg>
         </div>
         <NavLink
-          to="/"
+          to="/dashboard"
           className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}
           title="Dashboard"
         >

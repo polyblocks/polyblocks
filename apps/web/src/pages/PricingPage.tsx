@@ -243,7 +243,7 @@ export default function PricingPage() {
         if (result.ok) {
           setMmStatus("Payment verified ✓");
           await refreshUser();
-          setTimeout(() => navigate("/"), 2000);
+          setTimeout(() => navigate("/dashboard"), 2000);
         } else {
           setMmStatus(null);
         }
@@ -280,7 +280,7 @@ export default function PricingPage() {
 
       if (data.ok) {
         await refreshUser();
-        setTimeout(() => navigate("/"), 2000);
+        setTimeout(() => navigate("/dashboard"), 2000);
       }
     } catch {
       setSubmitResult({
@@ -311,7 +311,7 @@ export default function PricingPage() {
             )}
             <button
               className="pricing-back-btn"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/dashboard")}
             >
               <ArrowLeft size={14} />
               Back to Dashboard
@@ -325,7 +325,7 @@ export default function PricingPage() {
   // ── Main pricing UI ────────────────────────────────────────────────────
   return (
     <div className="pricing-page">
-      <button className="pricing-back-link" onClick={() => navigate("/")}>
+      <button className="pricing-back-link" onClick={() => navigate("/dashboard")}>
         <ArrowLeft size={14} />
         Back to Dashboard
       </button>
