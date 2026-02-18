@@ -43,6 +43,7 @@ export default function EditorPage() {
   const paperRun = useEditorStore((s) => s.paperRun);
 
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
+  const [dbgClickCount, setDbgClickCount] = useState(0);
 
   // Edge context menu state
   const [edgeMenu, setEdgeMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
@@ -99,6 +100,7 @@ export default function EditorPage() {
   // onNodeClick: directly select the clicked node
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      setDbgClickCount((c) => c + 1);
       selectNode(node.id);
       selectEdge(null);
       setEdgeMenu(null);
@@ -226,6 +228,7 @@ export default function EditorPage() {
           <div>showPropertiesPanel: <b>{String(showPropertiesPanel)}</b></div>
           <div>selectedNodeId: <b>{selectedNodeId ?? "null"}</b></div>
           <div>nodes.length: <b>{nodes.length}</b></div>
+          <div>onNodeClick fires: <b>{dbgClickCount}x</b></div>
           <div>Click a block to test ↓</div>
         </div>
 

@@ -156,10 +156,9 @@ function PolyblockNode({ id, data, selected }: NodeProps) {
     <div
       className={`pb-node ${selected ? "selected" : ""}`}
       style={{ borderColor: selected ? def.color : undefined }}
-      onMouseDown={(e) => {
-        // Use mousedown (fires before React Flow processes the event)
-        // to immediately set selectedNodeId in the store.
-        e.stopPropagation();
+      onClick={() => {
+        // Direct DOM click handler — fires on every click regardless of React Flow
+        // No stopPropagation so React Flow's onNodeClick also fires
         selectNode(id);
       }}
     >
