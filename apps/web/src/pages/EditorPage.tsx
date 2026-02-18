@@ -37,6 +37,7 @@ export default function EditorPage() {
   const selectedEdgeId = useEditorStore((s) => s.selectedEdgeId);
   const showLogDrawer = useEditorStore((s) => s.showLogDrawer);
   const showPropertiesPanel = useEditorStore((s) => s.showPropertiesPanel);
+  const selectedNodeId = useEditorStore((s) => s.selectedNodeId);
   const strategyId = useEditorStore((s) => s.strategyId);
   const isRunning = useEditorStore((s) => s.isRunning);
   const paperRun = useEditorStore((s) => s.paperRun);
@@ -203,6 +204,29 @@ export default function EditorPage() {
               </button>
             </div>
           )}
+        </div>
+
+        {/* DEBUG OVERLAY — remove after fixing */}
+        <div style={{
+          position: "fixed",
+          top: 8,
+          right: 8,
+          background: "rgba(0,0,0,0.85)",
+          color: "#0f0",
+          fontFamily: "monospace",
+          fontSize: 11,
+          padding: "8px 12px",
+          borderRadius: 6,
+          zIndex: 99999,
+          pointerEvents: "none",
+          maxWidth: 320,
+          lineHeight: 1.6,
+        }}>
+          <div>🔍 DEBUG</div>
+          <div>showPropertiesPanel: <b>{String(showPropertiesPanel)}</b></div>
+          <div>selectedNodeId: <b>{selectedNodeId ?? "null"}</b></div>
+          <div>nodes.length: <b>{nodes.length}</b></div>
+          <div>Click a block to test ↓</div>
         </div>
 
         {showPropertiesPanel && <PropertiesPanel />}
