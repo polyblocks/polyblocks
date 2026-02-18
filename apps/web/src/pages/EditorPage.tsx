@@ -10,7 +10,7 @@ import {
   Controls,
   MiniMap,
   type ReactFlowInstance,
-  type OnSelectionChangeParams,
+  type Node,
 } from "@xyflow/react";
 import { BlockType } from "@polyblocks/types";
 import { useEditorStore } from "../stores/editorStore";
@@ -95,24 +95,20 @@ export default function EditorPage() {
     [addNode],
   );
 
-  // Use onSelectionChange (React Flow v12 recommended pattern) to sync
-  // selected node/edge into the Zustand store reliably.
-  const onSelectionChange = useCallback(
-    ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
-      if (selectedNodes.length > 0) {
-        selectNode(selectedNodes[0].id);
-        selectEdge(null);
-      } else if (selectedEdges.length > 0) {
-        selectEdge(selectedEdges[0].id);
-        selectNode(null);
-      } else {
-        selectNode(null);
-        selectEdge(null);
-      }
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      selectNode(node.id);
+      selectEdge(null);
       setEdgeMenu(null);
     },
     [selectNode, selectEdge],
   );
+
+  const onPaneClick = useCallback(() => {
+    selectNode(null);
+    selectEdge(null);
+    setEdgeMenu(null);
+  }, [selectNode, selectEdge]);
 
   const onEdgeClick = useCallback(
     (_: React.MouseEvent, edge: { id: string }) => {
@@ -168,9 +164,10 @@ export default function EditorPage() {
             }}
             onDrop={onDrop}
             onDragOver={onDragOver}
-            onSelectionChange={onSelectionChange}
+            onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
             onEdgeContextMenu={onEdgeContextMenu}
+            onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
