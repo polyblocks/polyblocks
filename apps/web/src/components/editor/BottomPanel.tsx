@@ -4,6 +4,7 @@
 
 import { useEffect, useRef } from "react";
 import { useEditorStore } from "../../stores/editorStore";
+import { useAuthStore } from "../../stores/authStore";
 import { Button } from "@polyblocks/ui";
 import {
   Trash2,
@@ -119,11 +120,11 @@ function LogsTab() {
                     ? "skipped"
                     : nr.output
                       ? Object.entries(nr.output)
-                          .map(
-                            ([k, v]) =>
-                              `${k}: ${typeof v === "object" ? JSON.stringify(v).slice(0, 60) : String(v)}`,
-                          )
-                          .join(" · ")
+                        .map(
+                          ([k, v]) =>
+                            `${k}: ${typeof v === "object" ? JSON.stringify(v).slice(0, 60) : String(v)}`,
+                        )
+                        .join(" · ")
                       : "done"}
               </span>
               <span className="duration">{nr.durationMs}ms</span>
@@ -200,6 +201,42 @@ function TradesTab() {
 
 function PositionsTab() {
   const positions = useEditorStore((s) => s.positions);
+  const trades = useEditorStore((s) => s.trades);
+  const strategyId = useEditorStore((s) => s.strategyId);
+
+  const handleClose = (pos: typeof positions[0]) => {
+    // Create a reverse SELL trade at current price to close the position
+    const closeTrade = {
+      id: `t_close_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      strategyId,
+      marketConditionId: pos.marketConditionId,
+      tokenId: pos.tokenId,
+      side: "SELL" as const,
+      price: pos.currentPrice,
+      size: pos.size,
+      executedAt: new Date().toISOString(),
+      originNodeId: "manual_close",
+    };
+
+    const allTrades = [closeTrade, ...trades].slice(0, 500);
+    const newPositions = positions.filter(
+      (p) => !(p.tokenId === pos.tokenId && p.marketConditionId === pos.marketConditionId),
+    );
+
+    useEditorStore.setState({ trades: allTrades, positions: newPositions });
+
+    // Persist to MongoDB
+    const userId = useAuthStore.getState().user?.id || "anonymous";
+    const token = useAuthStore.getState().token;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["x-session-token"] = token;
+
+    fetch(`/api/paper-trades/${strategyId}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ userId, trades: [closeTrade] }),
+    }).catch(() => { });
+  };
 
   if (positions.length === 0) {
     return (
@@ -221,6 +258,7 @@ function PositionsTab() {
             <th>Current</th>
             <th>P&L</th>
             <th>Token</th>
+            <th style={{ width: 60 }}></th>
           </tr>
         </thead>
         <tbody>
@@ -246,6 +284,16 @@ function PositionsTab() {
                 </td>
                 <td className="trade-token" title={pos.tokenId}>
                   {shortId(pos.tokenId)}
+                </td>
+                <td>
+                  <button
+                    className="position-close-btn"
+                    onClick={() => handleClose(pos)}
+                    title="Close this position (paper)"
+                  >
+                    <XCircle size={14} />
+                    Close
+                  </button>
                 </td>
               </tr>
             );

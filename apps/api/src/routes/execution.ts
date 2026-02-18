@@ -106,6 +106,15 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
       }
     }
 
+    // ── Enforce: only one strategy may run at a time ────────────────────
+    const existingId = scheduler.getRunningStrategyId();
+    if (existingId && existingId !== graph.id) {
+      return {
+        success: false,
+        error: `Another strategy is already running (${existingId}). Stop it before starting a new one.`,
+      };
+    }
+
     // Determine interval from graph
     let intervalMs = body.intervalMs || 15_000;
     for (const node of graph.nodes) {

@@ -18,8 +18,10 @@ import BlockPalette from "../components/editor/BlockPalette";
 import PropertiesPanel from "../components/editor/PropertiesPanel";
 import EditorToolbar from "../components/editor/EditorToolbar";
 import BottomPanel from "../components/editor/BottomPanel";
+import CustomEdge from "../components/editor/CustomEdge";
 
 const nodeTypes = { polyblock: PolyblockNode };
+const edgeTypes = { custom: CustomEdge };
 
 export default function EditorPage() {
   const nodes = useEditorStore((s) => s.nodes);
@@ -79,15 +81,13 @@ export default function EditorPage() {
       const blockType = event.dataTransfer.getData(
         "application/polyblocks-block",
       ) as BlockType;
+
       if (!blockType) return;
 
-      const flow = reactFlowRef.current;
-      if (!flow) return;
-
-      const position = flow.screenToFlowPosition({
+      const position = reactFlowRef.current?.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
-      });
+      }) || { x: event.clientX, y: event.clientY };
 
       addNode(blockType, position);
     },
@@ -97,6 +97,7 @@ export default function EditorPage() {
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {
       selectNode(node.id);
+      selectEdge(null);
       setEdgeMenu(null);
     },
     [selectNode],
@@ -167,14 +168,15 @@ export default function EditorPage() {
             onEdgeContextMenu={onEdgeContextMenu}
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             fitView
             snapToGrid
             snapGrid={[16, 16]}
             deleteKeyCode={null}
             defaultEdgeOptions={{
-              type: "smoothstep",
+              type: "custom",
               animated: true,
-              style: { cursor: "pointer" },
+              style: { cursor: "pointer", stroke: "var(--pb-text-muted)", strokeWidth: 2 },
               interactionWidth: 20,
             }}
             edgesReconnectable

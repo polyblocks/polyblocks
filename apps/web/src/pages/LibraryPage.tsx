@@ -235,7 +235,12 @@ export default function LibraryPage() {
   return (
     <div className="dashboard">
       <div className="dashboard-hero">
-        <h1>My Strategies</h1>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <h1 style={{ margin: 0 }}>My Strategies</h1>
+          <Button variant="primary" onClick={() => navigate("/editor")}>
+            New Strategy
+          </Button>
+        </div>
         <p>Your saved strategies. Open any to continue editing or run it.</p>
         {totalRunning > 0 && (
           <div className="running-summary">

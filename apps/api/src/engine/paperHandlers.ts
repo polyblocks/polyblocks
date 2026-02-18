@@ -48,6 +48,73 @@ async function fetchJson(url: string): Promise<unknown> {
   return res.json();
 }
 
+function safeJsonParse<T>(value: unknown, fallback: T): T {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  if (Array.isArray(value)) return value as T;
+  return fallback;
+}
+
+function matchesTimeframe(text: string, timeframe: string): boolean {
+  const lower = text.toLowerCase();
+  const m = lower.match(/(\d{1,2}):(\d{2})\s*(am|pm)\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)/);
+  if (m) {
+    const sh = Number(m[1]);
+    const sm = Number(m[2]);
+    const sap = m[3];
+    const eh = Number(m[4]);
+    const em = Number(m[5]);
+    const eap = m[6];
+    const toMinutes = (h: number, min: number, ap: string) => {
+      const hh = (h % 12) + (ap === "pm" ? 12 : 0);
+      return hh * 60 + min;
+    };
+    const startMin = toMinutes(sh, sm, sap);
+    const endMin = toMinutes(eh, em, eap);
+    let diff = endMin - startMin;
+    if (diff < 0) diff += 12 * 60;
+    if (timeframe === "1h") return diff === 60;
+    if (timeframe === "15m") return diff === 15;
+    if (timeframe === "5m") return diff === 5;
+  }
+  if (timeframe === "1h") {
+    return /1\s*hour|1\s*hr|1h|next\s*hour|next\s*1\s*hour|next\s*1\s*hr/.test(lower);
+  }
+  if (timeframe === "15m") {
+    return /15\s*min|15\s*mins|15m|15[-\s]?minute|15\s*minutes/.test(lower);
+  }
+  if (timeframe === "5m") {
+    return /5\s*min|5\s*mins|5m|5[-\s]?minute|5\s*minutes/.test(lower);
+  }
+  return true;
+}
+
+const CRYPTO_ALIASES: Record<string, string[]> = {
+  BTC: ["BTC", "Bitcoin"],
+  ETH: ["ETH", "Ethereum"],
+  SOL: ["SOL", "Solana"],
+  DOGE: ["DOGE", "Dogecoin"],
+  XRP: ["XRP", "Ripple"],
+  AVAX: ["AVAX", "Avalanche"],
+};
+
+function getCryptoTokens(symbol: string): string[] {
+  const upper = symbol.trim().toUpperCase();
+  if (!upper) return [];
+  return CRYPTO_ALIASES[upper] || [upper];
+}
+
+function parseBool(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return value.toLowerCase() === "true";
+  return Boolean(value);
+}
+
 // ─── Market Data Cache ──────────────────────────────────────────────────────
 // Prevents re-fetching the same market data on every poll iteration.
 // Cache entries expire after 60 seconds so price/metadata stays fresh.
@@ -143,6 +210,98 @@ const marketSelectorHandler: NodeHandler = {
       ctx.log(node.id, `❌ Failed to fetch market ${conditionId}: ${msg}`);
       throw new Error(`Market lookup failed for ${conditionId}: ${msg}`);
     }
+  },
+};
+
+const recentCryptoMarketHandler: NodeHandler = {
+  async execute(node, inputs, ctx) {
+    if (inputs.trigger === false) return { market: null };
+    const cryptoSymbol = String(node.config.cryptoSymbol || "BTC");
+    const timeframe = String(node.config.timeframe || "1h");
+    const searchQuery = String(node.config.searchQuery || "");
+    const tokens = getCryptoTokens(cryptoSymbol);
+    const query = searchQuery.trim();
+
+    const params = new URLSearchParams({
+      limit: "100",
+      offset: "0",
+      active: "true",
+      closed: "false",
+      order: "startDate",
+      ascending: "false",
+    });
+
+    const t0 = Date.now();
+    const res = await fetch(`${GAMMA_HOST}/markets?${params}`);
+    if (!res.ok) {
+      throw new Error(`Gamma API error ${res.status}`);
+    }
+
+    const raw = (await res.json()) as Array<Record<string, unknown>>;
+    const filtered = raw
+      .map((m) => ({
+        conditionId: String(m.conditionId || m.condition_id || ""),
+        question: String(m.question || ""),
+        slug: String(m.slug || ""),
+        image: String(m.image || m.icon || ""),
+        groupItemTitle: String(m.groupItemTitle || ""),
+        outcomes: safeJsonParse(m.outcomes as string, [] as string[]),
+        outcomePrices: safeJsonParse(m.outcomePrices as string, [] as string[]),
+        clobTokenIds: safeJsonParse(m.clobTokenIds as string, [] as string[]),
+        startDate: String(m.startDate || ""),
+        endDate: String(m.endDate || ""),
+        active: parseBool(m.active),
+        closed: parseBool(m.closed),
+      }))
+      .filter((m) => {
+        if (!m.active || m.closed) return false;
+        const hay = `${m.question} ${m.slug}`.toLowerCase();
+        if (query && !hay.includes(query.toLowerCase())) {
+          return false;
+        }
+        if (tokens.length > 0 && !tokens.some((t) => hay.includes(t.toLowerCase()))) {
+          return false;
+        }
+        return matchesTimeframe(hay, timeframe);
+      })
+      .sort((a, b) => {
+        const aTime = Date.parse(a.startDate || a.endDate || "") || 0;
+        const bTime = Date.parse(b.startDate || b.endDate || "") || 0;
+        return bTime - aTime;
+      });
+
+    const latest = filtered[0];
+    if (!latest?.conditionId) {
+      ctx.log(node.id, "No matching live crypto market found");
+      return { market: null };
+    }
+
+    let market: Record<string, unknown> = {
+      conditionId: latest.conditionId,
+      clobTokenIds: latest.clobTokenIds,
+      outcomes: latest.outcomes,
+      outcomePrices: latest.outcomePrices,
+      question: latest.question,
+      image: latest.image,
+      groupItemTitle: latest.groupItemTitle,
+      active: true,
+      closed: false,
+    };
+
+    if (!latest.clobTokenIds || latest.clobTokenIds.length === 0) {
+      const cached = await fetchMarketCached(latest.conditionId) as Record<string, unknown>;
+      market = { ...cached, conditionId: latest.conditionId };
+      if (!market.clobTokenIds) {
+        const tokensFromMarket = market.tokens as Array<{ token_id: string }> | undefined;
+        if (tokensFromMarket && Array.isArray(tokensFromMarket)) {
+          market.clobTokenIds = tokensFromMarket.map((t) => t.token_id);
+        }
+      }
+    }
+
+    const elapsed = Date.now() - t0;
+    ctx.log(node.id, `Latest ${cryptoSymbol} ${timeframe} market loaded (${elapsed}ms)`);
+    return { market };
   },
 };
 
@@ -978,6 +1137,7 @@ export function createPaperHandlers(): NodeHandlerRegistry {
   registry.set(BlockType.ManualTrigger, manualTriggerHandler);
   registry.set(BlockType.PriceCrossTrigger, priceCrossTriggerHandler);
   registry.set(BlockType.MarketSelector, marketSelectorHandler);
+  registry.set(BlockType.RecentCryptoMarket, recentCryptoMarketHandler);
   registry.set(BlockType.PriceData, priceDataHandler);
   registry.set(BlockType.SpreadData, spreadDataHandler);
   registry.set(BlockType.OrderBookData, orderBookDataHandler);
@@ -1010,3 +1170,4 @@ export function createPaperHandlers(): NodeHandlerRegistry {
 
   return registry;
 }
+

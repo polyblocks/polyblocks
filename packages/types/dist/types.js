@@ -34,6 +34,7 @@ export var BlockType;
     BlockType["EventResolutionTrigger"] = "event_resolution_trigger";
     // Market
     BlockType["MarketSelector"] = "market_selector";
+    BlockType["RecentCryptoMarket"] = "recent_crypto_market";
     // Data
     BlockType["PriceData"] = "price_data";
     BlockType["SpreadData"] = "spread_data";

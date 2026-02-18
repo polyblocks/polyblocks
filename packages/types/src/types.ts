@@ -45,6 +45,7 @@ export enum BlockType {
 
   // Market
   MarketSelector = "market_selector",
+  RecentCryptoMarket = "recent_crypto_market",
 
   // Data
   PriceData = "price_data",

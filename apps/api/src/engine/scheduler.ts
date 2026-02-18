@@ -86,6 +86,19 @@ class StrategyScheduler {
     return this.schedules.has(strategyId);
   }
 
+  /** Returns true if any strategy is currently scheduled. */
+  hasAnyRunning(): boolean {
+    return this.schedules.size > 0;
+  }
+
+  /** Returns the ID of the currently running strategy, or null. */
+  getRunningStrategyId(): string | null {
+    for (const [id] of this.schedules) {
+      return id;
+    }
+    return null;
+  }
+
   getStatus(strategyId: string) {
     const entry = this.schedules.get(strategyId);
     if (!entry) return null;

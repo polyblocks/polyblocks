@@ -28,6 +28,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerAiRoutes } from "./routes/ai.js";
 import { registerContactRoutes } from "./routes/contact.js";
 import { registerPositionRoutes } from "./routes/positions.js";
+import { registerPaperTradeRoutes } from "./routes/paperTrades.js";
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -57,6 +58,7 @@ async function main() {
   await app.register(registerAiRoutes, { prefix: "/api/ai" });
   await app.register(registerContactRoutes, { prefix: "/api/contact" });
   await app.register(registerPositionRoutes, { prefix: "/api/positions" });
+  await app.register(registerPaperTradeRoutes, { prefix: "/api/paper-trades" });
 
   // ── Health ──────────────────────────────────────────────────────────────
   app.get("/api/health", async () => ({

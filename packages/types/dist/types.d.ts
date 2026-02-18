@@ -30,6 +30,7 @@ export declare enum BlockType {
     ManualTrigger = "manual_trigger",
     EventResolutionTrigger = "event_resolution_trigger",
     MarketSelector = "market_selector",
+    RecentCryptoMarket = "recent_crypto_market",
     PriceData = "price_data",
     SpreadData = "spread_data",
     OrderBookData = "orderbook_data",

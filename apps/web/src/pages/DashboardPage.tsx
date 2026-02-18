@@ -5,7 +5,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEditorStore } from "../stores/editorStore";
 import { useAuthStore } from "../stores/authStore";
-import { Plus, Workflow, BookTemplate, Library, Mail } from "lucide-react";
+import { Plus, Workflow, BookTemplate, Library, Mail, Briefcase, BarChart3, Users } from "lucide-react";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -56,6 +56,36 @@ export default function DashboardPage() {
           </div>
           <div className="action-label">My Strategies</div>
           <div className="action-desc">View your saved strategies</div>
+        </div>
+
+        <div className="strategy-card" onClick={() => navigate("/positions")}>
+          <div className="action-icon" style={{ background: "rgba(245, 158, 11, 0.15)", color: "var(--pb-trigger)" }}>
+            <Briefcase size={24} />
+          </div>
+          <div className="action-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span>Positions</span>
+            <span className="pb-badge pb-badge-action">Beta</span>
+          </div>
+          <div className="action-desc">Live and paper positions with PnL timeline</div>
+        </div>
+
+        <div className="strategy-card" onClick={() => navigate("/backtesting")}>
+          <div className="action-icon" style={{ background: "rgba(59, 130, 246, 0.15)", color: "var(--pb-data)" }}>
+            <BarChart3 size={24} />
+          </div>
+          <div className="action-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span>Backtesting</span>
+            <span className="pb-badge pb-badge-utility">Coming Soon</span>
+          </div>
+          <div className="action-desc">Replay historical data and analyze performance</div>
+        </div>
+
+        <div className="strategy-card" onClick={() => navigate("/copy-trading")}>
+          <div className="action-icon" style={{ background: "rgba(139, 92, 246, 0.15)", color: "var(--pb-market)" }}>
+            <Users size={24} />
+          </div>
+          <div className="action-label">Copy Trading</div>
+          <div className="action-desc">Mirror trades from top Polymarket wallets</div>
         </div>
       </div>
 

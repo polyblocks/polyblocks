@@ -8,6 +8,11 @@ Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force -Er
 Start-Sleep -Seconds 2
 Write-Host "Cleared." -ForegroundColor Green
 
+# 0.5) Build shared packages so new blocks appear in the editor
+Write-Host "Building shared packages..." -ForegroundColor Cyan
+pnpm -C $root -r --filter @polyblocks/types --filter @polyblocks/engine-core build
+Write-Host "Shared packages built." -ForegroundColor Green
+
 # 1) Launch API server in a new window
 Write-Host "Starting API server in new window..." -ForegroundColor Cyan
 Start-Process pwsh -ArgumentList "-NoExit","-Command","cd '$root\apps\api'; npx tsx src/server.ts"

@@ -126,15 +126,6 @@ export default function Layout() {
 
         <div className="nav-spacer" />
 
-        {user && !isPro() && (
-          <NavLink
-            to="/pricing"
-            className={({ isActive }) => `nav-btn nav-upgrade ${isActive ? "active" : ""}`}
-            title="Upgrade to Pro"
-          >
-            <Crown size={18} />
-          </NavLink>
-        )}
         {user && isPro() && (
           <button
             className="nav-btn nav-support"

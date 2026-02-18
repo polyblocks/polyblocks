@@ -76,6 +76,11 @@ function getConfigPreview(blockType: BlockType, config: Record<string, unknown>)
       if (q) return q.length > 30 ? q.slice(0, 28) + "…" : q;
       return config.conditionId ? "Market set" : "No market";
     }
+    case BlockType.RecentCryptoMarket: {
+      const symbol = String(config.cryptoSymbol || "BTC");
+      const tf = String(config.timeframe || "1h");
+      return `${symbol} · ${tf}`;
+    }
     case BlockType.NotGate:
       return "¬ invert";
     case BlockType.IfElse:

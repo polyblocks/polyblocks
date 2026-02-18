@@ -46,6 +46,8 @@ export interface DbStrategy {
   [key: string]: unknown;              // allow extra StrategyGraph fields
 }
 
+
+
 export interface DbCredentials {
   _id: string;                         // same as userId (one doc per user)
   userId: string;
@@ -56,6 +58,27 @@ export interface DbCredentials {
   signatureType: number;
   funderAddress: string;
   isConfigured: boolean;
+}
+
+export interface DbPaperTrade {
+  _id: string;
+  userId: string;
+  strategyId: string;
+  marketConditionId: string;
+  tokenId: string;
+  side: "BUY" | "SELL";
+  price: number;
+  size: number;
+  executedAt: string;
+  originNodeId: string;
+}
+
+export interface DbExecutionLog {
+  _id: string;
+  userId: string;
+  strategyId: string;
+  log: unknown;
+  createdAt: string;
 }
 
 // ── Singleton client / db ───────────────────────────────────────────────────
@@ -85,6 +108,8 @@ export async function connectDb(): Promise<Db> {
     { expireAfterSeconds: 0 },          // MongoDB TTL — auto-deletes expired sessions
   );
   await db.collection("credentials").createIndex({ userId: 1 }, { unique: true });
+  await db.collection("paperTrades").createIndex({ userId: 1, strategyId: 1 });
+  await db.collection("executionLogs").createIndex({ userId: 1, strategyId: 1 });
 
   console.log("✅ Connected to MongoDB");
   return db;
@@ -111,4 +136,12 @@ export function strategiesCol(): Collection<DbStrategy> {
 
 export function credentialsCol(): Collection<DbCredentials> {
   return getDb().collection<DbCredentials>("credentials");
+}
+
+export function paperTradesCol(): Collection<DbPaperTrade> {
+  return getDb().collection<DbPaperTrade>("paperTrades");
+}
+
+export function executionLogsCol(): Collection<DbExecutionLog> {
+  return getDb().collection<DbExecutionLog>("executionLogs");
 }

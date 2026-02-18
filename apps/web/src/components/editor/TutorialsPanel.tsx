@@ -130,6 +130,20 @@ const BLOCK_TUTORIALS: Record<BlockType, {
       "📋 Example: Market Selector → Price Data → Threshold → AND Gate → Place Order",
     ],
   },
+  [BlockType.RecentCryptoMarket]: {
+    purpose: "Always select the most recent live crypto market for a specific timeframe.",
+    howItWorks: "Filters live Gamma markets by crypto symbol and timeframe, then outputs the most recent match whenever triggered.",
+    inputExplanations: {
+      trigger: "When to refresh the most recent crypto market. Connect from an Interval Trigger or Manual Trigger.",
+    },
+    outputExplanations: {
+      market: "A Market reference for the latest matching crypto market.",
+    },
+    tips: [
+      "Use 5m or 15m for faster signals, 1h for slower momentum checks",
+      "Combine with Price Data and Threshold to trade on new crypto events",
+    ],
+  },
   [BlockType.PriceData]: {
     purpose: "Fetch the current mid-price and spread for a market. This is the most commonly used data block.",
     howItWorks: "When triggered, it calls the Polymarket CLOB API to get the midpoint price and bid-ask spread for the selected token.",

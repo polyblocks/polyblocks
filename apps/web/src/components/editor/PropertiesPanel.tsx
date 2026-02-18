@@ -11,6 +11,7 @@ import { Input, Select, Button } from "@polyblocks/ui";
 import { useEditorStore } from "../../stores/editorStore";
 import { X, Trash2, Settings, BookOpen, Sparkles } from "lucide-react";
 import MarketPicker from "./MarketPicker";
+import CryptoMarketPicker from "./CryptoMarketPicker";
 import TutorialsPanel from "./TutorialsPanel";
 import AiBuilderPanel from "./AiBuilderPanel";
 
@@ -197,6 +198,12 @@ function PropertiesContent({
           <div className="property-group">
             <label>Market</label>
             <MarketPicker config={config} onConfigChange={handleConfigChange} />
+          </div>
+        )}
+        {blockType === BlockType.RecentCryptoMarket && (
+          <div className="property-group">
+            <label>Crypto Market</label>
+            <CryptoMarketPicker config={config} onConfigChange={handleConfigChange} />
           </div>
         )}
 

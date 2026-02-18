@@ -55,6 +55,9 @@ export default function BlockPalette() {
   /** Blocks with Beta badge */
   const BETA_BLOCKS = new Set<BlockType>([BlockType.CustomApiData]);
 
+  /** Blocks marked as Coming Soon (disabled) */
+  const COMING_SOON_BLOCKS = new Set<BlockType>([BlockType.RecentCryptoMarket]);
+
   const allBlocks = Object.values(BLOCK_REGISTRY);
   const filtered = search
     ? allBlocks.filter(
@@ -93,15 +96,17 @@ export default function BlockPalette() {
             <div className="block-palette-category-label">{group.label}</div>
             {group.blocks.map((block) => {
               const isLocked = PRO_BLOCKS.has(block.type) && !isPro();
+              const isComingSoon = COMING_SOON_BLOCKS.has(block.type);
+              
               return (
                 <div
                   key={block.type}
-                  className={`block-palette-item${isLocked ? " locked" : ""}`}
-                  draggable={!isLocked}
-                  onDragStart={(e) => !isLocked && onDragStart(e, block.type)}
+                  className={`block-palette-item${isLocked ? " locked" : ""}${isComingSoon ? " coming-soon" : ""}`}
+                  draggable={!isLocked && !isComingSoon}
+                  onDragStart={(e) => !isLocked && !isComingSoon && onDragStart(e, block.type)}
                   onClick={() => isLocked && navigate("/pricing")}
-                  title={isLocked ? "Pro feature — click to upgrade" : block.description}
-                  style={isLocked ? { opacity: 0.6, cursor: "pointer" } : undefined}
+                  title={isLocked ? "Pro feature — click to upgrade" : (isComingSoon ? "Coming Soon" : block.description)}
+                  style={(isLocked || isComingSoon) ? { opacity: 0.6, cursor: isComingSoon ? "not-allowed" : "pointer" } : undefined}
                 >
                   <div
                     className="icon-box"
@@ -116,8 +121,11 @@ export default function BlockPalette() {
                   {isLocked && (
                     <Lock size={12} style={{ marginLeft: "auto", color: "var(--pb-text-muted)" }} />
                   )}
-                  {BETA_BLOCKS.has(block.type) && !isLocked && (
+                  {BETA_BLOCKS.has(block.type) && !isLocked && !isComingSoon && (
                     <span className="block-beta-badge">BETA</span>
+                  )}
+                  {isComingSoon && (
+                    <span className="block-beta-badge" style={{ background: "var(--pb-text-muted)", color: "var(--pb-bg-main)" }}>SOON</span>
                   )}
                 </div>
               );

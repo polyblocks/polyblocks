@@ -270,13 +270,7 @@ export default function LandingPage() {
             <p>Calculate expected value, implied probability, and your edge vs the market. Only take +EV bets with built-in math blocks.</p>
           </div>
 
-          <div className="landing-feature-card">
-            <div className="feature-icon" style={{ background: "rgba(99,102,241,0.12)", color: "var(--pb-accent)" }}>
-              <Activity size={22} />
-            </div>
-            <h3>Animated Data Flow</h3>
-            <p>See your strategy come alive — animated edges show data and signals flowing between blocks in real time.</p>
-          </div>
+
         </div>
       </section>
 
@@ -349,6 +343,18 @@ export default function LandingPage() {
             </div>
             <h4>Multi-Condition Buyer</h4>
             <p>Price above 0.6 AND volume over $10K AND spread under 3¢? Then buy $50 — all wired visually.</p>
+          </div>
+          <div style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "center", 
+            gridColumn: "1 / -1", 
+            marginTop: 16,
+            color: "var(--pb-text-muted)",
+            fontSize: 14,
+            fontWeight: 500
+          }}>
+            ...and many more
           </div>
         </div>
       </section>
@@ -740,3 +746,5 @@ export default function LandingPage() {
     </div>
   );
 }
+
+

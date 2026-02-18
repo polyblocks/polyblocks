@@ -57,7 +57,7 @@ export async function registerMarketRoutes(app: FastifyInstance) {
       offset: query.offset || "0",
       active: "true",
       closed: "false",
-      order: "volume24hr",
+      order: query.order || "volume24hr",
       ascending: "false",
     });
 
@@ -244,3 +244,4 @@ export async function registerMarketRoutes(app: FastifyInstance) {
     return res.json();
   });
 }
+

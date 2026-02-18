@@ -61,9 +61,9 @@ function safeJsonParse<T>(value: unknown, fallback: T): T {
 
 /** Enrich positions with market names from Gamma API */
 async function enrichWithMarketNames(
-  positions: Array<{ conditionId?: string; asset?: string; [key: string]: unknown }>
-): Promise<Map<string, { question: string; slug: string; image: string; outcomes: string[]; outcomePrices: string[]; clobTokenIds: string[] }>> {
-  const marketMap = new Map<string, { question: string; slug: string; image: string; outcomes: string[]; outcomePrices: string[]; clobTokenIds: string[] }>();
+  positions: Array<{ conditionId?: string; asset?: string;[key: string]: unknown }>
+): Promise<Map<string, { question: string; slug: string; image: string; outcomes: string[]; outcomePrices: string[]; clobTokenIds: string[]; active: boolean; closed: boolean; winningOutcome?: string }>> {
+  const marketMap = new Map<string, { question: string; slug: string; image: string; outcomes: string[]; outcomePrices: string[]; clobTokenIds: string[]; active: boolean; closed: boolean; winningOutcome?: string }>();
 
   // Collect unique condition IDs
   const conditionIds = new Set<string>();
@@ -86,6 +86,8 @@ async function enrichWithMarketNames(
             outcomes: safeJsonParse(m.outcomes as string, []),
             outcomePrices: safeJsonParse(m.outcomePrices as string, []),
             clobTokenIds: safeJsonParse(m.clobTokenIds as string, []),
+            active: Boolean(m.active),
+            closed: Boolean(m.closed),
           });
         }
       }
@@ -194,7 +196,7 @@ export async function registerPositionRoutes(app: FastifyInstance) {
         },
         undefined,
         OrderType.FOK,
-      ) as { orderID?: string; status?: string; error?: string; [key: string]: unknown };
+      ) as { orderID?: string; status?: string; error?: string;[key: string]: unknown };
 
       // Detect errors
       const resp = response as Record<string, unknown>;
@@ -237,7 +239,7 @@ export async function registerPositionRoutes(app: FastifyInstance) {
       const funderAddr = creds.funderAddress || signerAddr;
 
       // Fetch trade history from Polymarket Data API
-      const tradesUrl = `${DATA_API}/trades?user=${funderAddr.toLowerCase()}&limit=50`;
+      const tradesUrl = `${DATA_API}/trades?user=${funderAddr.toLowerCase()}&limit=1000`;
       console.log(`[Trades] Fetching: ${tradesUrl}`);
       const tradesRes = await fetch(tradesUrl);
 

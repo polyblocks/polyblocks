@@ -105,6 +105,31 @@ export const BLOCK_REGISTRY: Record<BlockType, BlockDefinition> = {
     color: COLORS[NodeCategory.Market],
     icon: "search",
   },
+  [BlockType.RecentCryptoMarket]: {
+    type: BlockType.RecentCryptoMarket,
+    category: NodeCategory.Market,
+    label: "Recent Crypto Market",
+    description: "Get the most recent live crypto market by timeframe",
+    inputs: [{ id: "trigger", label: "Trigger", type: PortType.Signal }],
+    outputs: [{ id: "market", label: "Market", type: PortType.Market }],
+    defaultConfig: {
+      cryptoSymbol: "BTC",
+      timeframe: "1h",
+      searchQuery: "",
+      conditionId: "",
+      tokenId: "",
+      question: "",
+      image: "",
+      groupItemTitle: "",
+      eventTitle: "",
+      eventSlug: "",
+      outcomePrices: [],
+      outcomes: [],
+      clobTokenIds: [],
+    },
+    color: COLORS[NodeCategory.Market],
+    icon: "activity",
+  },
 
   // ── Data ──────────────────────────────────────────────────────────────────
 

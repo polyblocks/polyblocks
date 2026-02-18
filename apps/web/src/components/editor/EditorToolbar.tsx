@@ -3,6 +3,7 @@
  */
 
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button, Badge } from "@polyblocks/ui";
 import { useEditorStore } from "../../stores/editorStore";
 import { useAuthStore } from "../../stores/authStore";
@@ -46,6 +47,7 @@ export default function EditorToolbar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showSaved, setShowSaved] = useState(false);
   const [showUpgradeHint, setShowUpgradeHint] = useState(false);
+  const [showSavePrompt, setShowSavePrompt] = useState(false);
 
   const errors = validationIssues.filter(
     (i) => i.severity === ValidationSeverity.Error,
@@ -235,8 +237,8 @@ export default function EditorToolbar() {
               runMode === "live" && !canLiveTrade()
                 ? "Upgrade to Pro for live trading"
                 : runMode === "live"
-                ? "Run strategy with real orders (keeps running even if you leave this page)"
-                : "Run strategy continuously (keeps running even if you leave this page)"
+                  ? "Run strategy with real orders (keeps running even if you leave this page)"
+                  : "Run strategy continuously (keeps running even if you leave this page)"
             }
             onClick={() => {
               if (runMode === "live" && !canLiveTrade()) {
@@ -244,12 +246,8 @@ export default function EditorToolbar() {
                 setTimeout(() => setShowUpgradeHint(false), 3000);
                 return;
               }
-              // Server-side execution only — never double-execute.
-              // startBackground() handles scheduling on the server;
-              // paperRun() handles client-side polling for log display.
-              // IMPORTANT: only ONE of them should place orders.
-              // We use server-side scheduling only and paperRun just polls.
-              startBackground();
+              // Show save prompt before running
+              setShowSavePrompt(true);
             }}
             style={runMode === "live" ? { background: "var(--pb-risk)", borderColor: "var(--pb-risk)" } : {}}
           >
@@ -292,6 +290,53 @@ export default function EditorToolbar() {
             Strategy continues running even if you navigate away. Stop it from here or the Library page.
           </span>
         </div>
+      )}
+
+      {/* Save-before-run modal */}
+      {showSavePrompt && createPortal(
+        <div className="save-prompt-overlay" onClick={() => setShowSavePrompt(false)}>
+          <div className="save-prompt-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="save-prompt-icon">
+              <Save size={24} />
+            </div>
+            <h3>Save your strategy?</h3>
+            <p>Would you like to save your strategy before running it?</p>
+            <div className="save-prompt-actions">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={async () => {
+                  setShowSavePrompt(false);
+                  await saveStrategy();
+                  setShowSaved(true);
+                  setTimeout(() => setShowSaved(false), 2000);
+                  startBackground();
+                }}
+              >
+                <Save size={14} />
+                Save & Run
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowSavePrompt(false);
+                  startBackground();
+                }}
+              >
+                <Play size={14} />
+                Run Without Saving
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowSavePrompt(false)}
+                style={{ color: "var(--pb-text-muted)" }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

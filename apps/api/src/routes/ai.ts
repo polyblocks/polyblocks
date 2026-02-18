@@ -36,6 +36,7 @@ CRITICAL: The "type" field must use the EXACT snake_case values shown below. Do 
 
 ### Market Blocks
 - type: "market_selector" — Select a Polymarket market. Config: { conditionId: "", question: "" }. Outputs: market.
+- type: "recent_crypto_market" — Get the most recent live crypto market. Config: { cryptoSymbol: "BTC", timeframe: "1h", searchQuery: "" }. Inputs: trigger(signal). Outputs: market.
 
 ### Data Blocks (fetch live data)
 - type: "price_data" — Get current price. Config: { side: "YES"|"NO" }. Inputs: market, trigger(signal). Outputs: midpoint(number), bestBid(number), bestAsk(number).
@@ -78,7 +79,7 @@ CRITICAL: The "type" field must use the EXACT snake_case values shown below. Do 
 
 VALID TYPE VALUES (use ONLY these exact strings):
 interval_trigger, price_cross_trigger, manual_trigger, event_resolution_trigger,
-market_selector, price_data, spread_data, orderbook_data, multi_market_compare, user_activity, custom_api_data,
+market_selector, recent_crypto_market, price_data, spread_data, orderbook_data, multi_market_compare, user_activity, custom_api_data,
 and_gate, or_gate, not_gate, if_else, threshold_compare, cooldown, math_op, position_sizer,
 probability_calc, expected_value, edge_calc,
 max_exposure, daily_loss_limit, kill_switch,
@@ -285,6 +286,7 @@ export async function registerAiRoutes(app: FastifyInstance) {
         ManualTrigger: "manual_trigger",
         EventResolutionTrigger: "event_resolution_trigger",
         MarketSelector: "market_selector",
+        RecentCryptoMarket: "recent_crypto_market",
         PriceData: "price_data",
         SpreadData: "spread_data",
         OrderBookData: "orderbook_data",
