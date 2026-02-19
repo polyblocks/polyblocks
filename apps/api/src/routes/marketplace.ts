@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { Sort } from "mongodb";
 import { nanoid } from "nanoid";
 import * as crypto from "crypto";
 import { ethers } from "ethers";
@@ -296,7 +297,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       ];
     }
 
-    const sortSpec = sort === "new" ? { publishedAt: -1 } : { publishedAt: -1 };
+    const sortSpec: Sort = sort === "new" ? { publishedAt: -1 } : { publishedAt: -1 };
     const listings = await marketplaceListingsCol().find(filter).sort(sortSpec).skip(skip).limit(take).toArray();
     const statsMap = await getListingStatsMap(listings.map((l) => l._id));
 

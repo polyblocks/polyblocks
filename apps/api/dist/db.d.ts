@@ -83,6 +83,8 @@ export interface DbMarketplaceListing {
     priceUsdc: number;
     chainId: number;
     currency: "USDC";
+    estimatedRoiPct?: number;
+    estimatedWinRatePct?: number;
     artifact: {
         nodes: unknown[];
         edges: unknown[];
@@ -128,6 +130,7 @@ export interface DbMarketplacePurchase {
     status: "pending" | "verified" | "failed";
     createdAt: string;
     verifiedAt: string | null;
+    clonedStrategyId?: string | null;
 }
 export interface DbWalletChallenge {
     _id: string;
