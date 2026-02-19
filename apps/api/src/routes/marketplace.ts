@@ -886,7 +886,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
   });
 
   app.get("/verified", async () => {
-    await ensureVerifiedSeeded();
+    await ensureMarketplaceSeeded();
     const perfs = await marketplaceVerifiedPerformanceCol().find({}).sort({ computedAt: -1 }).limit(50).toArray();
     const listingIds = perfs.map((p) => p.listingId);
     const listings = await marketplaceListingsCol().find({ _id: { $in: listingIds }, status: "active", visibility: "public" }).toArray();

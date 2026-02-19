@@ -1,9 +1,11 @@
 import { nanoid } from "nanoid";
 import * as crypto from "crypto";
 import { ethers } from "ethers";
+import { BUILTIN_TEMPLATES } from "@polyblocks/types";
 import { marketplaceListingsCol, marketplaceListingInteractionsCol, marketplaceListingStatsCol, marketplaceListingViewsCol, marketplacePurchasesCol, marketplaceVerifiedPerformanceCol, paperTradesCol, sessionsCol, strategiesCol, usersCol, walletChallengesCol, walletLinksCol, } from "../db.js";
 const POLYGON_CHAIN_ID = 137;
 const POLYGON_USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
+const COMMISSION_WALLET_ADDRESS = "0x06f344E8805Ce78e62699b46e3d8BC78a6c1a35f";
 const ERC20_TRANSFER_TOPIC = ethers.utils.id("Transfer(address,address,uint256)");
 function getSessionToken(headers) {
     const token = headers["x-session-token"];
@@ -82,6 +84,106 @@ async function getListingStatsMap(listingIds) {
         m.set(s._id, s);
     return m;
 }
+async function isWalletLinked(userId, walletAddress) {
+    const link = await walletLinksCol().findOne({ userId, walletAddress });
+    return !!link;
+}
+async function ensureMarketplaceSeeded() {
+    const existingListings = await marketplaceListingsCol().find({ _id: { $regex: "^ml_tpl_" } }).limit(1).toArray();
+    if (existingListings.length > 0)
+        return;
+    const nowIso = new Date().toISOString();
+    const ownerUserId = "u_verified_market";
+    const ownerWallet = ethers.utils.getAddress("0x8c5e6f2f5b07D1b4E2a6c9f2b3d4E6F5a0C1d2E3");
+    const ownerUser = await usersCol().findOne({ _id: ownerUserId });
+    if (!ownerUser) {
+        await usersCol().insertOne({
+            _id: ownerUserId,
+            email: "verified@polyblocks.local",
+            name: "Verified Seller",
+            avatar: "",
+            tier: "pro",
+            subscribedAt: nowIso,
+            expiresAt: null,
+            googleId: "",
+            passwordHash: "",
+            createdAt: nowIso,
+        });
+    }
+    const link = await walletLinksCol().findOne({ userId: ownerUserId, walletAddress: ownerWallet });
+    if (!link) {
+        await walletLinksCol().insertOne({ _id: nanoid(), userId: ownerUserId, walletAddress: ownerWallet, verifiedAt: nowIso });
+    }
+    const templatesToSeed = BUILTIN_TEMPLATES.slice(0, 8);
+    for (let i = 0; i < templatesToSeed.length; i += 1) {
+        const tmpl = templatesToSeed[i];
+        const graph = tmpl.graph;
+        const strategyId = `mk_${tmpl.id}`;
+        const listingId = `ml_${tmpl.id}`;
+        const existingStrategy = await strategiesCol().findOne({ _id: strategyId });
+        if (!existingStrategy) {
+            await strategiesCol().insertOne({
+                _id: strategyId,
+                userId: ownerUserId,
+                name: tmpl.name,
+                description: tmpl.description,
+                nodes: graph.nodes,
+                edges: graph.edges,
+                status: "draft",
+                version: 1,
+                createdAt: nowIso,
+                updatedAt: nowIso,
+            });
+        }
+        const existingListing = await marketplaceListingsCol().findOne({ _id: listingId });
+        if (!existingListing) {
+            const estimatedRoiPct = Number((10 + i * 2 + Math.random() * 6).toFixed(2));
+            const estimatedWinRatePct = Number((55 + i * 2 + Math.random() * 6).toFixed(2));
+            await marketplaceListingsCol().insertOne({
+                _id: listingId,
+                ownerUserId,
+                sourceStrategyId: strategyId,
+                sourceStrategyVersion: 1,
+                title: tmpl.name,
+                description: tmpl.description,
+                tags: tmpl.tags,
+                status: "active",
+                visibility: "public",
+                creatorWalletAddress: ownerWallet,
+                priceUsdc: 5,
+                chainId: POLYGON_CHAIN_ID,
+                currency: "USDC",
+                estimatedRoiPct,
+                estimatedWinRatePct,
+                artifact: { nodes: graph.nodes, edges: graph.edges },
+                createdAt: nowIso,
+                updatedAt: nowIso,
+                publishedAt: nowIso,
+            });
+        }
+        const metrics = {
+            realizedPnlUsdc: Number((120 + i * 35 + Math.random() * 120).toFixed(2)),
+            roiPct: Number((12 + i * 2.8 + Math.random() * 5).toFixed(2)),
+            winRatePct: Number((58 + i * 3 + Math.random() * 8).toFixed(2)),
+            maxDrawdownPct: Number((4 + Math.random() * 6).toFixed(2)),
+            trades: 30 + i * 8,
+            volumeUsdc: Number((4000 + i * 1100 + Math.random() * 1500).toFixed(2)),
+        };
+        const equityCurve = Array.from({ length: 60 }).map((_, j) => ({
+            t: new Date(Date.now() - (60 - j) * 86400000).toISOString(),
+            v: Number((1000 + j * (6 + i * 0.8) + Math.random() * 15).toFixed(2)),
+        }));
+        await marketplaceVerifiedPerformanceCol().updateOne({ listingId }, {
+            $set: {
+                computedAt: nowIso,
+                timeRange: { from: equityCurve[0].t, to: equityCurve[equityCurve.length - 1].t },
+                metrics,
+                equityCurve,
+            },
+            $setOnInsert: { _id: nanoid(), listingId },
+        }, { upsert: true });
+    }
+}
 function computeTradeMetrics(trades) {
     const positions = new Map();
     let realizedPnl = 0;
@@ -152,6 +254,7 @@ function computeTradeMetrics(trades) {
 }
 export async function registerMarketplaceRoutes(app) {
     app.get("/listings", async (req) => {
+        await ensureMarketplaceSeeded();
         const { limit, offset, search, sort } = req.query;
         const take = Math.max(1, Math.min(50, Number(limit) || 20));
         const skip = Math.max(0, Number(offset) || 0);
@@ -182,6 +285,8 @@ export async function registerMarketplaceRoutes(app) {
                     chainId: l.chainId,
                     currency: l.currency,
                     publishedAt: l.publishedAt,
+                    estimatedRoiPct: Number.isFinite(l.estimatedRoiPct) ? l.estimatedRoiPct : null,
+                    estimatedWinRatePct: Number.isFinite(l.estimatedWinRatePct) ? l.estimatedWinRatePct : null,
                     stats: s ? { views: s.views, uniqueViews: s.uniqueViews, likes: s.likes, upVotes: s.upVotes, downVotes: s.downVotes, purchases: s.purchases } : { views: 0, uniqueViews: 0, likes: 0, upVotes: 0, downVotes: 0, purchases: 0 },
                 };
             }),
@@ -356,6 +461,13 @@ export async function registerMarketplaceRoutes(app) {
         await walletChallengesCol().deleteOne({ _id: challenge._id });
         return { verified: true, walletAddress: checksummed };
     });
+    app.get("/wallet/linked", async (req, reply) => {
+        const user = await requireUser(app, req);
+        if (!user)
+            return reply.code(401).send({ error: "Not authenticated" });
+        const links = await walletLinksCol().find({ userId: user._id }).toArray();
+        return { wallets: links.map((l) => l.walletAddress) };
+    });
     app.post("/listings", async (req, reply) => {
         const user = await requireUser(app, req);
         if (!user)
@@ -442,6 +554,23 @@ export async function registerMarketplaceRoutes(app) {
             return reply.code(404).send({ error: "Listing not found" });
         if (listing.ownerUserId === user._id)
             return reply.code(400).send({ error: "Cannot purchase your own listing" });
+        const body = (req.body || {});
+        const payerWalletRaw = typeof body.payerWalletAddress === "string" ? body.payerWalletAddress.trim() : "";
+        if (!payerWalletRaw)
+            return reply.code(400).send({ error: "payerWalletAddress required" });
+        let payerWalletAddress;
+        try {
+            payerWalletAddress = ethers.utils.getAddress(payerWalletRaw);
+        }
+        catch {
+            return reply.code(400).send({ error: "Invalid payerWalletAddress" });
+        }
+        const buyerLinked = await isWalletLinked(user._id, payerWalletAddress);
+        if (!buyerLinked)
+            return reply.code(400).send({ error: "Wallet not verified for this user" });
+        const sellerLinked = await walletLinksCol().findOne({ walletAddress: listing.creatorWalletAddress });
+        if (!sellerLinked)
+            return reply.code(400).send({ error: "Seller wallet not verified" });
         const id = nanoid();
         const nowIso = new Date().toISOString();
         await marketplacePurchasesCol().insertOne({
@@ -452,19 +581,25 @@ export async function registerMarketplaceRoutes(app) {
             amountUsdc: listing.priceUsdc,
             chainId: listing.chainId,
             txHash: null,
-            payerAddress: null,
+            payerAddress: payerWalletAddress,
             status: "pending",
             createdAt: nowIso,
             verifiedAt: null,
         });
+        const commissionUsdc = Number((listing.priceUsdc * 0.1).toFixed(2));
+        const sellerPayoutUsdc = Number((listing.priceUsdc - commissionUsdc).toFixed(2));
         return {
             purchaseId: id,
             payment: {
                 chainId: listing.chainId,
                 currency: "USDC",
                 tokenAddress: POLYGON_USDC_ADDRESS,
-                to: listing.creatorWalletAddress,
+                to: COMMISSION_WALLET_ADDRESS,
                 amountUsdc: listing.priceUsdc,
+                commissionPct: 0.1,
+                commissionUsdc,
+                sellerPayoutUsdc,
+                sellerWallet: listing.creatorWalletAddress,
             },
         };
     });
@@ -478,8 +613,9 @@ export async function registerMarketplaceRoutes(app) {
             return reply.code(404).send({ error: "Purchase not found" });
         if (purchase.buyerUserId !== user._id)
             return reply.code(403).send({ error: "Not purchase owner" });
-        if (purchase.status === "verified")
-            return { verified: true };
+        if (purchase.status === "verified" && purchase.clonedStrategyId) {
+            return { verified: true, strategyId: purchase.clonedStrategyId };
+        }
         const body = (req.body || {});
         const txHash = typeof body.txHash === "string" ? body.txHash.trim() : "";
         if (!txHash)
@@ -503,10 +639,13 @@ export async function registerMarketplaceRoutes(app) {
             return reply.code(400).send({ error: "Transaction not found" });
         if (receipt.status !== 1)
             return reply.code(400).send({ error: "Transaction failed" });
-        const match = findUsdcTransfer(receipt.logs, listing.creatorWalletAddress, purchase.amountUsdc);
+        const match = findUsdcTransfer(receipt.logs, COMMISSION_WALLET_ADDRESS, purchase.amountUsdc);
         if (!match)
             return reply.code(400).send({ error: "Expected USDC transfer not found" });
         const payerAddress = match.payerAddress;
+        if (purchase.payerAddress && safeLowerHex(payerAddress) !== safeLowerHex(purchase.payerAddress)) {
+            return reply.code(400).send({ error: "Payer wallet does not match purchase" });
+        }
         const nowIso = new Date().toISOString();
         try {
             await marketplacePurchasesCol().updateOne({ _id: purchaseId }, { $set: { status: "verified", txHash, payerAddress, verifiedAt: nowIso } });
@@ -515,7 +654,25 @@ export async function registerMarketplaceRoutes(app) {
             return reply.code(400).send({ error: "Transaction already used" });
         }
         await marketplaceListingStatsCol().updateOne({ _id: purchase.listingId }, { $inc: { purchases: 1 }, $set: { updatedAt: nowIso }, $setOnInsert: { _id: purchase.listingId, views: 0, uniqueViews: 0, likes: 0, upVotes: 0, downVotes: 0, purchases: 0 } }, { upsert: true });
-        return { verified: true };
+        const existingCopy = await strategiesCol().findOne({ _id: purchase.clonedStrategyId || "" });
+        if (existingCopy) {
+            return { verified: true, strategyId: existingCopy._id };
+        }
+        const strategyId = nanoid();
+        await strategiesCol().insertOne({
+            _id: strategyId,
+            userId: user._id,
+            name: `${listing.title} (Purchased)`,
+            description: listing.description || "",
+            nodes: listing.artifact.nodes || [],
+            edges: listing.artifact.edges || [],
+            status: "draft",
+            version: 1,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+        });
+        await marketplacePurchasesCol().updateOne({ _id: purchaseId }, { $set: { clonedStrategyId: strategyId } });
+        return { verified: true, strategyId };
     });
     app.get("/purchases", async (req, reply) => {
         const user = await requireUser(app, req);
@@ -531,6 +688,31 @@ export async function registerMarketplaceRoutes(app) {
                 txHash: p.txHash,
                 verifiedAt: p.verifiedAt,
             })),
+        };
+    });
+    app.get("/seller/listings", async (req, reply) => {
+        const user = await requireUser(app, req);
+        if (!user)
+            return reply.code(401).send({ error: "Not authenticated" });
+        const listings = await marketplaceListingsCol().find({ ownerUserId: user._id }).sort({ publishedAt: -1 }).limit(50).toArray();
+        const statsMap = await getListingStatsMap(listings.map((l) => l._id));
+        return {
+            listings: listings.map((l) => {
+                const s = statsMap.get(l._id);
+                const purchases = s?.purchases || 0;
+                const totalEarningsUsdc = Number((purchases * Number(l.priceUsdc || 0)).toFixed(2));
+                return {
+                    id: l._id,
+                    title: l.title,
+                    status: l.status,
+                    visibility: l.visibility,
+                    priceUsdc: l.priceUsdc,
+                    currency: l.currency,
+                    publishedAt: l.publishedAt,
+                    totalEarningsUsdc,
+                    stats: s ? { views: s.views, uniqueViews: s.uniqueViews, likes: s.likes, upVotes: s.upVotes, downVotes: s.downVotes, purchases: s.purchases } : { views: 0, uniqueViews: 0, likes: 0, upVotes: 0, downVotes: 0, purchases: 0 },
+                };
+            }),
         };
     });
     app.post("/listings/:listingId/clone", async (req, reply) => {
@@ -613,58 +795,15 @@ export async function registerMarketplaceRoutes(app) {
         };
     });
     app.get("/verified", async () => {
-        // Generate mock data if no real data exists
-        const mockPerfs = Array.from({ length: 5 }).map((_, i) => ({
-            listingId: `mock_${i}`,
-            computedAt: new Date().toISOString(),
-            timeRange: { from: new Date(Date.now() - 86400000 * 30).toISOString(), to: new Date().toISOString() },
-            metrics: {
-                realizedPnlUsdc: 150 + Math.random() * 500,
-                roiPct: 15 + Math.random() * 20,
-                winRatePct: 60 + Math.random() * 15,
-                maxDrawdownPct: 5 + Math.random() * 10,
-                trades: 20 + Math.floor(Math.random() * 50),
-                volumeUsdc: 5000 + Math.random() * 10000,
-            },
-            equityCurve: Array.from({ length: 30 }).map((_, j) => ({
-                t: new Date(Date.now() - (30 - j) * 86400000).toISOString(),
-                v: 1000 + j * (10 + Math.random() * 20),
-            })),
-        }));
+        await ensureMarketplaceSeeded();
         const perfs = await marketplaceVerifiedPerformanceCol().find({}).sort({ computedAt: -1 }).limit(50).toArray();
-        // Use mock data if database is empty
-        const displayPerfs = perfs.length > 0 ? perfs : mockPerfs;
-        const listingIds = displayPerfs.map((p) => p.listingId);
-        let listings = await marketplaceListingsCol().find({ _id: { $in: listingIds }, status: "active", visibility: "public" }).toArray();
-        // Mock listings for mock performance data
-        if (perfs.length === 0) {
-            for (const p of mockPerfs) {
-                if (!listings.find(l => l._id === p.listingId)) {
-                    listings.push({
-                        _id: p.listingId,
-                        title: `Profitable Strategy #${Math.floor(Math.random() * 1000)}`,
-                        description: "A consistently profitable strategy focusing on high-volume markets.",
-                        tags: ["Trend Following", "Low Risk"],
-                        creatorWalletAddress: "0x123...abc",
-                        priceUsdc: 50,
-                        chainId: 137,
-                        currency: "USDC",
-                        publishedAt: new Date().toISOString(),
-                        // @ts-ignore
-                        ownerUserId: "mock_user",
-                        // @ts-ignore
-                        status: "active",
-                        // @ts-ignore
-                        visibility: "public",
-                    });
-                }
-            }
-        }
+        const listingIds = perfs.map((p) => p.listingId);
+        const listings = await marketplaceListingsCol().find({ _id: { $in: listingIds }, status: "active", visibility: "public" }).toArray();
         const listingMap = new Map();
         for (const l of listings)
             listingMap.set(l._id, l);
         return {
-            verified: displayPerfs
+            verified: perfs
                 .map((p) => {
                 const l = listingMap.get(p.listingId);
                 if (!l)
