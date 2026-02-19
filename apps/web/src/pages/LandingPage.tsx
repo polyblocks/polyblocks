@@ -477,7 +477,7 @@ export default function LandingPage() {
             <div className="pricing-tier">Pro</div>
             <div className="pricing-price">
               <span className="price-amount pb-price-old">$7</span>
-              <span className="price-amount pb-price-new">$1</span>
+              <span className="price-amount pb-price-new">$5</span>
               <span className="price-period">/month</span>
             </div>
             <p className="pricing-desc">Full power. Real trading + copy trading on Polymarket.</p>
@@ -500,7 +500,7 @@ export default function LandingPage() {
               }
             }}>
               <Crown size={14} />
-              Upgrade to Pro — <span className="pb-price-old">$7</span> <span className="pb-price-new">$1</span>/mo
+              Upgrade to Pro — <span className="pb-price-old">$7</span> <span className="pb-price-new">$5</span>/mo
             </button>
             <p className="pricing-guarantee">30-day money-back guarantee</p>
           </div>

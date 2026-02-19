@@ -151,6 +151,119 @@ export function validateStrategy(graph: StrategyGraph): ValidationIssue[] {
     }
   }
 
+  const hasInput = (nodeId: string, portId: string) =>
+    graph.edges.some((e) => e.target === nodeId && e.targetHandle === portId);
+
+  const hasOutput = (nodeId: string, portId: string) =>
+    graph.edges.some((e) => e.source === nodeId && e.sourceHandle === portId);
+
+  for (const node of graph.nodes) {
+    switch (node.type) {
+      case BlockType.AndGate:
+      case BlockType.OrGate: {
+        if (!hasInput(node.id, "a") || !hasInput(node.id, "b")) {
+          issues.push({
+            severity: ValidationSeverity.Error,
+            nodeId: node.id,
+            message: "Logic gate needs both boolean inputs connected.",
+          });
+        }
+        if (!hasInput(node.id, "signal")) {
+          issues.push({
+            severity: ValidationSeverity.Warning,
+            nodeId: node.id,
+            message: "Logic gate has no signal input. It will not pass signals.",
+          });
+        }
+        if (!hasOutput(node.id, "result") && !hasOutput(node.id, "signal")) {
+          issues.push({
+            severity: ValidationSeverity.Warning,
+            nodeId: node.id,
+            message: "Logic gate has no outputs connected.",
+          });
+        }
+        break;
+      }
+      case BlockType.NotGate: {
+        if (!hasInput(node.id, "value")) {
+          issues.push({
+            severity: ValidationSeverity.Error,
+            nodeId: node.id,
+            message: "NOT gate needs a boolean input connected.",
+          });
+        }
+        if (!hasOutput(node.id, "result") && !hasOutput(node.id, "signal")) {
+          issues.push({
+            severity: ValidationSeverity.Warning,
+            nodeId: node.id,
+            message: "NOT gate has no outputs connected.",
+          });
+        }
+        break;
+      }
+      case BlockType.IfElse: {
+        if (!hasInput(node.id, "condition")) {
+          issues.push({
+            severity: ValidationSeverity.Error,
+            nodeId: node.id,
+            message: "IF/ELSE needs a condition input connected.",
+          });
+        }
+        if (!hasInput(node.id, "signal")) {
+          issues.push({
+            severity: ValidationSeverity.Warning,
+            nodeId: node.id,
+            message: "IF/ELSE has no signal input. It will never route signals.",
+          });
+        }
+        if (!hasOutput(node.id, "then") && !hasOutput(node.id, "else")) {
+          issues.push({
+            severity: ValidationSeverity.Warning,
+            nodeId: node.id,
+            message: "IF/ELSE has no outputs connected.",
+          });
+        }
+        break;
+      }
+      case BlockType.ThresholdCompare: {
+        if (!hasInput(node.id, "value")) {
+          issues.push({
+            severity: ValidationSeverity.Error,
+            nodeId: node.id,
+            message: "Threshold compare needs a value input connected.",
+          });
+        }
+        const operator = String(node.config.operator || "");
+        const validOperators = new Set([">", ">=", "<", "<=", "==", "!="]);
+        if (!validOperators.has(operator)) {
+          issues.push({
+            severity: ValidationSeverity.Error,
+            nodeId: node.id,
+            message: "Threshold compare has an invalid operator.",
+          });
+        }
+        const threshold = Number(node.config.threshold);
+        if (!Number.isFinite(threshold)) {
+          issues.push({
+            severity: ValidationSeverity.Error,
+            nodeId: node.id,
+            message: "Threshold compare requires a numeric threshold.",
+          });
+        }
+        if (!hasOutput(node.id, "result") && !hasOutput(node.id, "signal")) {
+          issues.push({
+            severity: ValidationSeverity.Warning,
+            nodeId: node.id,
+            message: "Threshold compare has no outputs connected.",
+          });
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
   // ── 7. Market selector config ─────────────────────────────────────────────
   for (const node of graph.nodes) {
     if (node.type === BlockType.MarketSelector) {

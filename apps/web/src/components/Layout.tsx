@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X, Briefcase, Radio, Loader2, Square } from "lucide-react";
+import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X, Briefcase, Radio, Loader2, Square, ShoppingBag, Activity } from "lucide-react";
 import { useAuthStore } from "../stores/authStore";
 import { useCopyTradingStore } from "../stores/copyTradingStore";
 
@@ -168,7 +168,7 @@ export default function Layout() {
                   <div className={`nav-plan-item pro ${isPro() ? "current" : ""}`}>
                     <div className="nav-plan-name">
                       <Zap size={13} />
-                      Pro — <span className="pb-price-old">$7</span> <span className="pb-price-new">$1</span>/mo
+                      Pro — <span className="pb-price-old">$7</span> <span className="pb-price-new">$5</span>/mo
                     </div>
                     <div className="nav-plan-desc">Live trading, copy trading, priority support</div>
                     {isPro() ? (

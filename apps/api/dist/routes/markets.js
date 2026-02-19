@@ -53,7 +53,7 @@ export async function registerMarketRoutes(app) {
             offset: query.offset || "0",
             active: "true",
             closed: "false",
-            order: "volume24hr",
+            order: query.order || "volume24hr",
             ascending: "false",
         });
         const res = await fetch(`${GAMMA_HOST}/markets?${params}`);

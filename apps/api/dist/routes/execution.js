@@ -1,11 +1,13 @@
 /**
  * Execution routes — trigger paper runs, get logs, manage scheduled strategies.
  */
+import { BlockType } from "@polyblocks/types";
 import { evaluateGraph } from "@polyblocks/engine-core";
 import { nanoid } from "nanoid";
 import { createPaperHandlers } from "../engine/paperHandlers.js";
 import { createLiveHandlers } from "../engine/liveHandlers.js";
 import { getCredentials } from "./credentials.js";
+import { scheduler } from "../engine/scheduler.js";
 // ── In-memory execution log store ────────────────────────────────────────────
 const executionLogs = new Map();
 export async function registerExecutionRoutes(app) {
@@ -16,6 +18,23 @@ export async function registerExecutionRoutes(app) {
         // Strip the mode field before using as graph
         const graph = body;
         const runId = nanoid();
+        // ── Safety guard: prevent duplicate execution ─────────────────────────
+        // If this strategy is already running on the server scheduler, reject
+        // the manual /run request to prevent double order placement.
+        if (scheduler.isScheduled(graph.id)) {
+            return {
+                result: {
+                    id: runId,
+                    strategyId: graph.id,
+                    startedAt: new Date().toISOString(),
+                    completedAt: new Date().toISOString(),
+                    status: "failed",
+                    nodeResults: [],
+                    summary: "Strategy is already running on the server. Stop it first to run manually.",
+                },
+                logs: [],
+            };
+        }
         // Validate live mode has credentials
         if (mode === "live") {
             const creds = await getCredentials();
@@ -56,6 +75,59 @@ export async function registerExecutionRoutes(app) {
         if (stratLogs.length > 50)
             stratLogs.length = 50;
         return { result, logs };
+    });
+    // ── Start a strategy as a background scheduled job ────────────────────────
+    app.post("/schedule/start", async (request) => {
+        const body = request.body;
+        const mode = body.mode === "live" ? "live" : "paper";
+        const graph = body;
+        // Validate live mode has credentials
+        if (mode === "live") {
+            const creds = await getCredentials();
+            if (!creds.isConfigured) {
+                return { success: false, error: "No trading credentials configured." };
+            }
+        }
+        // ── Enforce: only one strategy may run at a time ────────────────────
+        const existingId = scheduler.getRunningStrategyId();
+        if (existingId && existingId !== graph.id) {
+            return {
+                success: false,
+                error: `Another strategy is already running (${existingId}). Stop it before starting a new one.`,
+            };
+        }
+        // Determine interval from graph
+        let intervalMs = body.intervalMs || 15_000;
+        for (const node of graph.nodes) {
+            if (node.type === BlockType.IntervalTrigger && node.config.intervalMs) {
+                intervalMs = Math.max(5000, Number(node.config.intervalMs));
+                break;
+            }
+        }
+        scheduler.start(graph, intervalMs, mode);
+        return { success: true, strategyId: graph.id, mode, intervalMs };
+    });
+    // ── Stop a scheduled strategy ─────────────────────────────────────────────
+    app.post("/schedule/stop", async (request) => {
+        const body = request.body;
+        scheduler.stop(body.strategyId);
+        return { success: true };
+    });
+    // ── Get status of a scheduled strategy ────────────────────────────────────
+    app.get("/schedule/status/:strategyId", async (request) => {
+        const { strategyId } = request.params;
+        const status = scheduler.getStatus(strategyId);
+        return { running: !!status, ...status };
+    });
+    // ── Get recent logs for a scheduled strategy ──────────────────────────────
+    app.get("/schedule/logs/:strategyId", async (request) => {
+        const { strategyId } = request.params;
+        const logs = scheduler.getRecentLogs(strategyId);
+        return { logs };
+    });
+    // ── Get all running strategies ────────────────────────────────────────────
+    app.get("/schedule/running", async () => {
+        return { strategies: scheduler.getAllRunning() };
     });
     // ── Get execution logs for a strategy ─────────────────────────────────────
     app.get("/logs/:strategyId", async (request) => {

@@ -8,6 +8,7 @@
     "build": "turbo build",
     "start": "node apps/api/dist/server.js",
     "lint": "turbo lint",
+    "test": "node --loader tsx --test test",
     "clean": "turbo clean",
     "heroku-postbuild": "pnpm run clean && pnpm run build"
   },

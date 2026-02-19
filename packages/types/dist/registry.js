@@ -93,13 +93,13 @@ export const BLOCK_REGISTRY = {
     [BlockType.RecentCryptoMarket]: {
         type: BlockType.RecentCryptoMarket,
         category: NodeCategory.Market,
-        label: "Recent Crypto Market",
-        description: "Get the most recent live crypto market by timeframe",
+        label: "Latest Crypto Market",
+        description: "Auto-select the currently active crypto market for a given interval",
         inputs: [{ id: "trigger", label: "Trigger", type: PortType.Signal }],
         outputs: [{ id: "market", label: "Market", type: PortType.Market }],
         defaultConfig: {
             cryptoSymbol: "BTC",
-            timeframe: "1h",
+            timeframe: "5m",
             searchQuery: "",
             conditionId: "",
             tokenId: "",
@@ -349,6 +349,23 @@ export const BLOCK_REGISTRY = {
         defaultConfig: { operator: "+", inputCount: 2 },
         color: COLORS[NodeCategory.Logic],
         icon: "calculator",
+    },
+    [BlockType.Formula]: {
+        type: BlockType.Formula,
+        category: NodeCategory.Logic,
+        label: "Formula",
+        description: "Evaluate a custom mathematical expression (e.g. (a+b)/c)",
+        inputs: [
+            { id: "a", label: "a", type: PortType.Number },
+            { id: "b", label: "b", type: PortType.Number },
+            { id: "c", label: "c", type: PortType.Number },
+        ],
+        outputs: [
+            { id: "result", label: "Result", type: PortType.Number },
+        ],
+        defaultConfig: { expression: "a + b", inputCount: 3 },
+        color: COLORS[NodeCategory.Logic],
+        icon: "function-square",
     },
     [BlockType.PositionSizer]: {
         type: BlockType.PositionSizer,

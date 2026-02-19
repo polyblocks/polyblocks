@@ -29,6 +29,20 @@ export async function connectDb() {
     await db.collection("strategies").createIndex({ userId: 1 });
     await db.collection("sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await db.collection("credentials").createIndex({ userId: 1 }, { unique: true });
+    await db.collection("paperTrades").createIndex({ userId: 1, strategyId: 1 });
+    await db.collection("executionLogs").createIndex({ userId: 1, strategyId: 1 });
+    await db.collection("marketplaceListings").createIndex({ ownerUserId: 1, publishedAt: -1 });
+    await db.collection("marketplaceListings").createIndex({ status: 1, publishedAt: -1 });
+    await db.collection("marketplaceListingStats").createIndex({ updatedAt: -1 });
+    await db.collection("marketplaceListingInteractions").createIndex({ listingId: 1, userId: 1 }, { unique: true });
+    await db.collection("marketplaceListingViews").createIndex({ listingId: 1, createdAt: -1 });
+    await db.collection("marketplaceListingViews").createIndex({ dedupeKey: 1 }, { unique: true });
+    await db.collection("marketplacePurchases").createIndex({ buyerUserId: 1, createdAt: -1 });
+    await db.collection("marketplacePurchases").createIndex({ txHash: 1, chainId: 1 }, { unique: true, sparse: true });
+    await db.collection("walletChallenges").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await db.collection("walletLinks").createIndex({ walletAddress: 1 }, { unique: true });
+    await db.collection("walletLinks").createIndex({ userId: 1 });
+    await db.collection("marketplaceVerifiedPerformance").createIndex({ listingId: 1 }, { unique: true });
     console.log("✅ Connected to MongoDB");
     return db;
 }
@@ -49,5 +63,35 @@ export function strategiesCol() {
 }
 export function credentialsCol() {
     return getDb().collection("credentials");
+}
+export function paperTradesCol() {
+    return getDb().collection("paperTrades");
+}
+export function executionLogsCol() {
+    return getDb().collection("executionLogs");
+}
+export function marketplaceListingsCol() {
+    return getDb().collection("marketplaceListings");
+}
+export function marketplaceListingStatsCol() {
+    return getDb().collection("marketplaceListingStats");
+}
+export function marketplaceListingInteractionsCol() {
+    return getDb().collection("marketplaceListingInteractions");
+}
+export function marketplaceListingViewsCol() {
+    return getDb().collection("marketplaceListingViews");
+}
+export function marketplacePurchasesCol() {
+    return getDb().collection("marketplacePurchases");
+}
+export function walletChallengesCol() {
+    return getDb().collection("walletChallenges");
+}
+export function walletLinksCol() {
+    return getDb().collection("walletLinks");
+}
+export function marketplaceVerifiedPerformanceCol() {
+    return getDb().collection("marketplaceVerifiedPerformance");
 }
 //# sourceMappingURL=db.js.map

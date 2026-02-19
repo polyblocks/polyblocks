@@ -44,6 +44,7 @@ export declare enum BlockType {
     ThresholdCompare = "threshold_compare",
     Cooldown = "cooldown",
     MathOp = "math_op",
+    Formula = "formula",
     PositionSizer = "position_sizer",
     ProbabilityCalc = "probability_calc",
     ExpectedValue = "expected_value",

@@ -81,6 +81,103 @@ export interface DbExecutionLog {
   createdAt: string;
 }
 
+export interface DbMarketplaceListing {
+  _id: string;
+  ownerUserId: string;
+  sourceStrategyId: string;
+  sourceStrategyVersion: number;
+  title: string;
+  description: string;
+  tags: string[];
+  status: "active" | "paused" | "delisted";
+  visibility: "public" | "unlisted";
+  creatorWalletAddress: string;
+  priceUsdc: number;
+  chainId: number;
+  currency: "USDC";
+  artifact: {
+    nodes: unknown[];
+    edges: unknown[];
+  };
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string;
+}
+
+export interface DbMarketplaceListingStats {
+  _id: string;
+  views: number;
+  uniqueViews: number;
+  likes: number;
+  upVotes: number;
+  downVotes: number;
+  purchases: number;
+  updatedAt: string;
+}
+
+export interface DbMarketplaceListingInteraction {
+  _id: string;
+  listingId: string;
+  userId: string;
+  liked: boolean;
+  vote: -1 | 0 | 1;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DbMarketplaceListingView {
+  _id: string;
+  listingId: string;
+  dedupeKey: string;
+  createdAt: Date;
+}
+
+export interface DbMarketplacePurchase {
+  _id: string;
+  listingId: string;
+  buyerUserId: string;
+  sellerUserId: string;
+  amountUsdc: number;
+  chainId: number;
+  txHash: string | null;
+  payerAddress: string | null;
+  status: "pending" | "verified" | "failed";
+  createdAt: string;
+  verifiedAt: string | null;
+}
+
+export interface DbWalletChallenge {
+  _id: string;
+  userId: string;
+  nonce: string;
+  message: string;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface DbWalletLink {
+  _id: string;
+  userId: string;
+  walletAddress: string;
+  verifiedAt: string;
+}
+
+export interface DbMarketplaceVerifiedPerformance {
+  _id: string;
+  listingId: string;
+  computedAt: string;
+  timeRange: { from: string; to: string };
+  metrics: {
+    realizedPnlUsdc: number;
+    roiPct: number;
+    winRatePct: number;
+    maxDrawdownPct: number;
+    trades: number;
+    volumeUsdc: number;
+  };
+  equityCurve: Array<{ t: string; v: number }>;
+}
+
 // ── Singleton client / db ───────────────────────────────────────────────────
 
 let client: MongoClient;
@@ -110,6 +207,18 @@ export async function connectDb(): Promise<Db> {
   await db.collection("credentials").createIndex({ userId: 1 }, { unique: true });
   await db.collection("paperTrades").createIndex({ userId: 1, strategyId: 1 });
   await db.collection("executionLogs").createIndex({ userId: 1, strategyId: 1 });
+  await db.collection("marketplaceListings").createIndex({ ownerUserId: 1, publishedAt: -1 });
+  await db.collection("marketplaceListings").createIndex({ status: 1, publishedAt: -1 });
+  await db.collection("marketplaceListingStats").createIndex({ updatedAt: -1 });
+  await db.collection("marketplaceListingInteractions").createIndex({ listingId: 1, userId: 1 }, { unique: true });
+  await db.collection("marketplaceListingViews").createIndex({ listingId: 1, createdAt: -1 });
+  await db.collection("marketplaceListingViews").createIndex({ dedupeKey: 1 }, { unique: true });
+  await db.collection("marketplacePurchases").createIndex({ buyerUserId: 1, createdAt: -1 });
+  await db.collection("marketplacePurchases").createIndex({ txHash: 1, chainId: 1 }, { unique: true, sparse: true });
+  await db.collection("walletChallenges").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  await db.collection("walletLinks").createIndex({ walletAddress: 1 }, { unique: true });
+  await db.collection("walletLinks").createIndex({ userId: 1 });
+  await db.collection("marketplaceVerifiedPerformance").createIndex({ listingId: 1 }, { unique: true });
 
   console.log("✅ Connected to MongoDB");
   return db;
@@ -144,4 +253,36 @@ export function paperTradesCol(): Collection<DbPaperTrade> {
 
 export function executionLogsCol(): Collection<DbExecutionLog> {
   return getDb().collection<DbExecutionLog>("executionLogs");
+}
+
+export function marketplaceListingsCol(): Collection<DbMarketplaceListing> {
+  return getDb().collection<DbMarketplaceListing>("marketplaceListings");
+}
+
+export function marketplaceListingStatsCol(): Collection<DbMarketplaceListingStats> {
+  return getDb().collection<DbMarketplaceListingStats>("marketplaceListingStats");
+}
+
+export function marketplaceListingInteractionsCol(): Collection<DbMarketplaceListingInteraction> {
+  return getDb().collection<DbMarketplaceListingInteraction>("marketplaceListingInteractions");
+}
+
+export function marketplaceListingViewsCol(): Collection<DbMarketplaceListingView> {
+  return getDb().collection<DbMarketplaceListingView>("marketplaceListingViews");
+}
+
+export function marketplacePurchasesCol(): Collection<DbMarketplacePurchase> {
+  return getDb().collection<DbMarketplacePurchase>("marketplacePurchases");
+}
+
+export function walletChallengesCol(): Collection<DbWalletChallenge> {
+  return getDb().collection<DbWalletChallenge>("walletChallenges");
+}
+
+export function walletLinksCol(): Collection<DbWalletLink> {
+  return getDb().collection<DbWalletLink>("walletLinks");
+}
+
+export function marketplaceVerifiedPerformanceCol(): Collection<DbMarketplaceVerifiedPerformance> {
+  return getDb().collection<DbMarketplaceVerifiedPerformance>("marketplaceVerifiedPerformance");
 }

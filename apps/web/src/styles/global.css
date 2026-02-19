@@ -1322,6 +1322,11 @@ body {
   cursor: pointer;
 }
 
+.react-flow__edge.edge-continuous .react-flow__edge-path {
+  stroke: var(--pb-accent) !important;
+  stroke-width: 2.5px;
+}
+
 /* Animated data flow particles along edges — only on animated edges */
 .react-flow__edge.animated path {
   stroke-dasharray: 6 4 !important;

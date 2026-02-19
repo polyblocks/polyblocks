@@ -41,6 +41,98 @@ async function fetchJson(url) {
         throw new Error(`API error ${res.status}: ${url}`);
     return res.json();
 }
+function safeJsonParse(value, fallback) {
+    if (typeof value === "string") {
+        try {
+            return JSON.parse(value);
+        }
+        catch {
+            return fallback;
+        }
+    }
+    if (Array.isArray(value))
+        return value;
+    return fallback;
+}
+function matchesTimeframe(text, timeframe) {
+    const lower = text.toLowerCase();
+    const m = lower.match(/(\d{1,2}):(\d{2})\s*(am|pm)\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)/);
+    if (m) {
+        const sh = Number(m[1]);
+        const sm = Number(m[2]);
+        const sap = m[3];
+        const eh = Number(m[4]);
+        const em = Number(m[5]);
+        const eap = m[6];
+        const toMinutes = (h, min, ap) => {
+            const hh = (h % 12) + (ap === "pm" ? 12 : 0);
+            return hh * 60 + min;
+        };
+        const startMin = toMinutes(sh, sm, sap);
+        const endMin = toMinutes(eh, em, eap);
+        let diff = endMin - startMin;
+        if (diff < 0)
+            diff += 12 * 60;
+        if (timeframe === "1h")
+            return diff >= 55 && diff <= 65;
+        if (timeframe === "15m")
+            return diff >= 13 && diff <= 17;
+        if (timeframe === "5m")
+            return diff >= 3 && diff <= 7;
+        if (timeframe === "1m")
+            return diff >= 0 && diff <= 2;
+    }
+    if (timeframe === "1m") {
+        return /1\s*min|1\s*mins|1m|1[-\s]?minute|1\s*minutes/.test(lower);
+    }
+    if (timeframe === "1h") {
+        return /1\s*hour|1\s*hr|1h|next\s*hour|next\s*1\s*hour|next\s*1\s*hr/.test(lower);
+    }
+    if (timeframe === "15m") {
+        return /15\s*min|15\s*mins|15m|15[-\s]?minute|15\s*minutes/.test(lower);
+    }
+    if (timeframe === "5m") {
+        return /5\s*min|5\s*mins|5m|5[-\s]?minute|5\s*minutes/.test(lower);
+    }
+    return true;
+}
+const CRYPTO_ALIASES = {
+    BTC: ["BTC", "Bitcoin"],
+    ETH: ["ETH", "Ethereum"],
+    SOL: ["SOL", "Solana"],
+    DOGE: ["DOGE", "Dogecoin"],
+    XRP: ["XRP", "Ripple"],
+    AVAX: ["AVAX", "Avalanche"],
+    TRUMP: ["TRUMP", "Donald Trump"],
+};
+function getCryptoTokens(symbol) {
+    const upper = symbol.trim().toUpperCase();
+    if (!upper)
+        return [];
+    return CRYPTO_ALIASES[upper] || [upper];
+}
+function parseBool(value) {
+    if (typeof value === "boolean")
+        return value;
+    if (typeof value === "string")
+        return value.toLowerCase() === "true";
+    return Boolean(value);
+}
+// ─── Market Data Cache ──────────────────────────────────────────────────────
+// Prevents re-fetching the same market data on every poll iteration.
+// Cache entries expire after 60 seconds so price/metadata stays fresh.
+const marketCache = new Map();
+const MARKET_CACHE_TTL_MS = 60_000; // 60s
+async function fetchMarketCached(conditionId) {
+    const now = Date.now();
+    const cached = marketCache.get(conditionId);
+    if (cached && (now - cached.fetchedAt) < MARKET_CACHE_TTL_MS) {
+        return cached.data;
+    }
+    const data = await fetchJson(`${CLOB_HOST}/markets/${conditionId}`);
+    marketCache.set(conditionId, { data, fetchedAt: now });
+    return data;
+}
 // ─── Handlers ───────────────────────────────────────────────────────────────
 const intervalTriggerHandler = {
     async execute(_node, _inputs, _ctx) {
@@ -58,7 +150,10 @@ const priceCrossTriggerHandler = {
         const market = inputs.market;
         if (!market)
             return { signal: false, price: null };
-        const tokenId = market.clobTokenIds[0];
+        const allTokenIds = market.clobTokenIds || market.tokens?.map((t) => t.token_id) || [];
+        const tokenId = allTokenIds[0];
+        if (!tokenId)
+            return { signal: false, price: null };
         const data = (await fetchJson(`${CLOB_HOST}/midpoint?token_id=${tokenId}`));
         const price = parseFloat(data.mid);
         const threshold = Number(node.config.threshold);
@@ -70,13 +165,137 @@ const priceCrossTriggerHandler = {
 };
 const marketSelectorHandler = {
     async execute(node, _inputs, ctx) {
-        const conditionId = String(node.config.conditionId);
+        const conditionId = node.config.conditionId ? String(node.config.conditionId).trim() : "";
         if (!conditionId) {
-            throw new Error("No market selected");
+            throw new Error("No market selected — open the Market Selector node and pick a market.");
         }
-        // Fetch market data from CLOB
-        const market = await fetchJson(`${CLOB_HOST}/markets/${conditionId}`);
-        ctx.log(node.id, `Selected market: ${conditionId}`);
+        // Use cache to avoid re-fetching on every poll iteration
+        const t0 = Date.now();
+        try {
+            const raw = await fetchMarketCached(conditionId);
+            const elapsed = Date.now() - t0;
+            // ── Normalise market object ─────────────────────────────────────
+            // The CLOB /markets/{conditionId} endpoint returns { tokens: [{token_id}] }
+            // but many downstream handlers expect clobTokenIds: string[].
+            // Also ensure conditionId is always present.
+            const market = { ...raw, conditionId };
+            // Extract clobTokenIds from tokens array if missing
+            if (!market.clobTokenIds || (Array.isArray(market.clobTokenIds) && market.clobTokenIds.length === 0)) {
+                const tokens = market.tokens;
+                if (tokens && Array.isArray(tokens)) {
+                    market.clobTokenIds = tokens.map((t) => t.token_id);
+                }
+            }
+            // Also map condition_id → conditionId if the API returns snake_case
+            if (!market.conditionId && market.condition_id) {
+                market.conditionId = market.condition_id;
+            }
+            ctx.log(node.id, `✅ Market loaded: ${conditionId} (${elapsed}ms${elapsed < 5 ? " — cached" : ""}) | tokenIds: ${(market.clobTokenIds || []).length}`);
+            return { market };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            ctx.log(node.id, `❌ Failed to fetch market ${conditionId}: ${msg}`);
+            throw new Error(`Market lookup failed for ${conditionId}: ${msg}`);
+        }
+    },
+};
+const recentCryptoMarketHandler = {
+    async execute(node, inputs, ctx) {
+        if (inputs.trigger === false)
+            return { market: null };
+        const cryptoSymbol = String(node.config.cryptoSymbol || "BTC");
+        const timeframe = String(node.config.timeframe || "5m");
+        const searchQuery = String(node.config.searchQuery || "");
+        const tokens = getCryptoTokens(cryptoSymbol);
+        const query = searchQuery.trim();
+        const params = new URLSearchParams({
+            limit: "100",
+            offset: "0",
+            active: "true",
+            closed: "false",
+            order: "startDate",
+            ascending: "false",
+        });
+        const t0 = Date.now();
+        const res = await fetch(`${GAMMA_HOST}/markets?${params}`);
+        if (!res.ok) {
+            throw new Error(`Gamma API error ${res.status}`);
+        }
+        const raw = (await res.json());
+        const filtered = raw
+            .map((m) => ({
+            conditionId: String(m.conditionId || m.condition_id || ""),
+            question: String(m.question || ""),
+            slug: String(m.slug || ""),
+            image: String(m.image || m.icon || ""),
+            groupItemTitle: String(m.groupItemTitle || ""),
+            outcomes: safeJsonParse(m.outcomes, []),
+            outcomePrices: safeJsonParse(m.outcomePrices, []),
+            clobTokenIds: safeJsonParse(m.clobTokenIds, []),
+            startDate: String(m.startDate || ""),
+            endDate: String(m.endDate || ""),
+            active: parseBool(m.active),
+            closed: parseBool(m.closed),
+        }))
+            .filter((m) => {
+            if (!m.active || m.closed)
+                return false;
+            const hay = `${m.question} ${m.slug}`.toLowerCase();
+            if (query && !hay.includes(query.toLowerCase())) {
+                return false;
+            }
+            if (tokens.length > 0 && !tokens.some((t) => hay.includes(t.toLowerCase()))) {
+                return false;
+            }
+            return matchesTimeframe(hay, timeframe);
+        })
+            .sort((a, b) => {
+            const aTime = Date.parse(a.startDate || a.endDate || "") || 0;
+            const bTime = Date.parse(b.startDate || b.endDate || "") || 0;
+            return bTime - aTime;
+        });
+        const nowMs = Date.now();
+        const parseMs = (iso) => {
+            const ms = Date.parse(iso);
+            return Number.isFinite(ms) ? ms : null;
+        };
+        const activePeriod = filtered.find((m) => {
+            const startMs = m.startDate ? parseMs(m.startDate) : null;
+            const endMs = m.endDate ? parseMs(m.endDate) : null;
+            if (startMs === null && endMs === null)
+                return false;
+            const start = startMs ?? -Infinity;
+            const end = endMs ?? Infinity;
+            return start <= nowMs && nowMs < end;
+        }) || filtered[0];
+        if (!activePeriod?.conditionId) {
+            ctx.log(node.id, "No matching live crypto market found");
+            return { market: null };
+        }
+        let market = {
+            conditionId: activePeriod.conditionId,
+            clobTokenIds: activePeriod.clobTokenIds,
+            outcomes: activePeriod.outcomes,
+            outcomePrices: activePeriod.outcomePrices,
+            question: activePeriod.question,
+            image: activePeriod.image,
+            groupItemTitle: activePeriod.groupItemTitle,
+            active: true,
+            closed: false,
+        };
+        if (!activePeriod.clobTokenIds || activePeriod.clobTokenIds.length === 0) {
+            const cached = await fetchMarketCached(activePeriod.conditionId);
+            market = { ...cached, conditionId: activePeriod.conditionId };
+            if (!market.clobTokenIds) {
+                const tokensFromMarket = market.tokens;
+                if (tokensFromMarket && Array.isArray(tokensFromMarket)) {
+                    market.clobTokenIds = tokensFromMarket.map((t) => t.token_id);
+                }
+            }
+        }
+        const elapsed = Date.now() - t0;
+        ctx.log(node.id, `Latest ${cryptoSymbol} ${timeframe} market loaded (${elapsed}ms)`);
         return { market };
     },
 };
@@ -107,9 +326,10 @@ const priceDataHandler = {
 const spreadDataHandler = {
     async execute(node, inputs, ctx) {
         const market = inputs.market;
-        if (!market?.clobTokenIds?.[0])
+        const spreadTokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
+        if (!spreadTokenIds[0])
             return { spread: null };
-        const tokenId = market.clobTokenIds[0];
+        const tokenId = spreadTokenIds[0];
         const data = (await fetchJson(`${CLOB_HOST}/spread?token_id=${tokenId}`));
         const spread = parseFloat(data.spread);
         ctx.log(node.id, `Spread: ${spread}`);
@@ -119,9 +339,10 @@ const spreadDataHandler = {
 const orderBookDataHandler = {
     async execute(node, inputs, ctx) {
         const market = inputs.market;
-        if (!market?.clobTokenIds?.[0])
+        const obTokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
+        if (!obTokenIds[0])
             return { orderbook: null, bidDepth: 0, askDepth: 0 };
-        const tokenId = market.clobTokenIds[0];
+        const tokenId = obTokenIds[0];
         const book = (await fetchJson(`${CLOB_HOST}/book?token_id=${tokenId}`));
         // Sort bids descending, asks ascending for correct ordering
         const sortedBids = (book.bids || []).slice().sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
@@ -235,6 +456,33 @@ const mathOpHandler = {
         return { result };
     },
 };
+const formulaHandler = {
+    async execute(node, inputs, ctx) {
+        const expr = String(node.config.expression || "a + b");
+        const a = Number(inputs.a || 0);
+        const b = Number(inputs.b || 0);
+        const c = Number(inputs.c || 0);
+        try {
+            // Basic math evaluation using Function constructor
+            // Only allow safe characters: 0-9 . + - * / % ( ) a b c and whitespace, maybe math functions like Math.max
+            // For now, simple regex check to prevent arbitrary code execution
+            if (!/^[0-9.+\-*/%()abc\s]+$/.test(expr)) {
+                throw new Error("Invalid characters. Only numbers, operators (+-*/%), and variables (a, b, c) allowed.");
+            }
+            const func = new Function("a", "b", "c", `return ${expr}`);
+            const result = Number(func(a, b, c));
+            if (!Number.isFinite(result))
+                throw new Error("Result is not a finite number");
+            ctx.log(node.id, `Formula: ${expr} (a=${a}, b=${b}, c=${c}) = ${result}`);
+            return { result };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            ctx.log(node.id, `❌ Formula Error: ${msg}`);
+            throw new Error(`Formula failed: ${msg}`);
+        }
+    },
+};
 // ── Risk ────────────────────────────────────────────────────────────────────
 const maxExposureHandler = {
     async execute(node, _inputs, ctx) {
@@ -271,6 +519,7 @@ const killSwitchHandler = {
 // ── Actions (paper mode) ────────────────────────────────────────────────────
 const placeOrderHandler = {
     async execute(node, inputs, ctx) {
+        const t0 = Date.now();
         const market = inputs.market;
         // Side can come from input port (e.g. UserActivity) or fall back to config
         const side = inputs.side ? String(inputs.side) : String(node.config.side || "BUY");
@@ -278,16 +527,17 @@ const placeOrderHandler = {
         const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
         const sizeUsd = inputs.sizeUsd ? Number(inputs.sizeUsd) : Number(node.config.sizeUsd || 10);
         const inputPrice = inputs.price;
+        const marketConditionId = market?.conditionId || market?.condition_id || "";
         // Duplicate trade prevention
         if (node.config.preventDuplicate) {
-            const tradeKey = `placed_${node.id}_${market?.conditionId || ""}_${side}_${outcome}`;
+            const tradeKey = `placed_${node.id}_${marketConditionId}_${side}_${outcome}`;
             if (ctx.state.get(tradeKey)) {
                 ctx.log(node.id, `⏭️ Duplicate trade skipped (${side} ${outcome} already placed this run)`);
                 return { orderId: null, filled: false };
             }
             ctx.state.set(tradeKey, true);
         }
-        const tokenIds = market?.clobTokenIds || [];
+        const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
         const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
         // Get current price to simulate fill
         let fillPrice = inputPrice ?? 0.5;
@@ -312,12 +562,13 @@ const placeOrderHandler = {
             size: shares,
             sizeUsd,
             tokenId,
-            conditionId: market?.conditionId,
+            conditionId: marketConditionId,
             filled: true,
             timestamp: Date.now(),
         };
-        ctx.log(node.id, `📝 PAPER ${side} ${outcome} | ${shares.toFixed(2)} shares @ $${fillPrice.toFixed(3)} ($${sizeUsd})`);
-        return { orderId: paperOrder.id, filled: true };
+        const elapsed = Date.now() - t0;
+        ctx.log(node.id, `📝 PAPER ${side} ${outcome} | ${shares.toFixed(2)} shares @ $${fillPrice.toFixed(3)} ($${sizeUsd}) [${elapsed}ms]`);
+        return { order: paperOrder, orderId: paperOrder.id, filled: true };
     },
 };
 const limitOrderHandler = {
@@ -327,16 +578,17 @@ const limitOrderHandler = {
         const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
         const sizeUsd = inputs.sizeUsd ? Number(inputs.sizeUsd) : Number(node.config.sizeUsd || 10);
         const limitPrice = inputs.limitPrice ? Number(inputs.limitPrice) : Number(node.config.limitPrice || 0.5);
+        const marketConditionId = market?.conditionId || market?.condition_id || "";
         // Duplicate trade prevention
         if (node.config.preventDuplicate) {
-            const tradeKey = `placed_${node.id}_${market?.conditionId || ""}_${side}_${outcome}`;
+            const tradeKey = `placed_${node.id}_${marketConditionId}_${side}_${outcome}`;
             if (ctx.state.get(tradeKey)) {
                 ctx.log(node.id, `⏭️ Duplicate trade skipped (${side} ${outcome} already placed this run)`);
                 return { orderId: null, placed: false };
             }
             ctx.state.set(tradeKey, true);
         }
-        const tokenIds = market?.clobTokenIds || [];
+        const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
         const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
         // Get current price to check if limit would fill
         let currentPrice = 0.5;
@@ -351,6 +603,18 @@ const limitOrderHandler = {
         // In paper mode, simulate whether the limit would be hit
         const wouldFill = side === "BUY" ? currentPrice <= limitPrice : currentPrice >= limitPrice;
         const paperId = `paper_limit_${Date.now()}`;
+        const paperOrder = {
+            id: paperId,
+            side,
+            outcome,
+            price: limitPrice,
+            size: shares,
+            sizeUsd,
+            tokenId,
+            conditionId: marketConditionId,
+            filled: wouldFill,
+            timestamp: Date.now(),
+        };
         if (wouldFill) {
             const prevExposure = ctx.state.get("paperExposureUsd") || 0;
             ctx.state.set("paperExposureUsd", prevExposure + sizeUsd);
@@ -359,7 +623,7 @@ const limitOrderHandler = {
         else {
             ctx.log(node.id, `📝 PAPER LIMIT ${side} ${outcome} | ${shares.toFixed(2)} shares @ limit $${limitPrice.toFixed(3)} — PENDING (market $${currentPrice.toFixed(3)})`);
         }
-        return { orderId: paperId, placed: true };
+        return { order: paperOrder, orderId: paperId, placed: true };
     },
 };
 const cancelOrderHandler = {
@@ -755,6 +1019,7 @@ export function createPaperHandlers() {
     registry.set(BlockType.ManualTrigger, manualTriggerHandler);
     registry.set(BlockType.PriceCrossTrigger, priceCrossTriggerHandler);
     registry.set(BlockType.MarketSelector, marketSelectorHandler);
+    registry.set(BlockType.RecentCryptoMarket, recentCryptoMarketHandler);
     registry.set(BlockType.PriceData, priceDataHandler);
     registry.set(BlockType.SpreadData, spreadDataHandler);
     registry.set(BlockType.OrderBookData, orderBookDataHandler);
@@ -763,6 +1028,7 @@ export function createPaperHandlers() {
     registry.set(BlockType.ThresholdCompare, thresholdCompareHandler);
     registry.set(BlockType.Cooldown, cooldownHandler);
     registry.set(BlockType.MathOp, mathOpHandler);
+    registry.set(BlockType.Formula, formulaHandler);
     registry.set(BlockType.MaxExposure, maxExposureHandler);
     registry.set(BlockType.DailyLossLimit, dailyLossLimitHandler);
     registry.set(BlockType.KillSwitch, killSwitchHandler);

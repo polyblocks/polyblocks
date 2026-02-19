@@ -336,7 +336,7 @@ export default function PricingPage() {
           <h2>Upgrade to Pro</h2>
           <div className="pricing-price-bump">
             <span className="pb-price-old">$7</span>
-            <span className="pb-price-new">$1</span>
+            <span className="pb-price-new">$5</span>
             <span className="pricing-price-period">/month</span>
           </div>
           <p>Pay with USDC on Polygon</p>

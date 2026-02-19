@@ -6,15 +6,32 @@
 import type { FastifyInstance } from "fastify";
 import type { StrategyGraph } from "@polyblocks/types";
 import { nanoid } from "nanoid";
-import { strategiesCol } from "../db.js";
+import { sessionsCol, strategiesCol } from "../db.js";
+
+function getSessionToken(headers: Record<string, unknown>): string {
+  const token = headers["x-session-token"];
+  return typeof token === "string" ? token : "";
+}
+
+async function resolveSession(token: string): Promise<string | null> {
+  if (!token) return null;
+  const session = await sessionsCol().findOne({ _id: token });
+  if (!session) return null;
+  if (session.expiresAt < new Date()) {
+    await sessionsCol().deleteOne({ _id: token });
+    return null;
+  }
+  return session.userId;
+}
 
 export async function registerStrategyRoutes(app: FastifyInstance) {
 
   // ── List all strategies (optionally filter by userId query param) ────────
-  app.get("/", async (req) => {
-    const { userId } = req.query as { userId?: string };
-    const filter = userId ? { userId } : {};
-    const docs = await strategiesCol().find(filter).sort({ updatedAt: -1 }).toArray();
+  app.get("/", async (req, reply) => {
+    const token = getSessionToken(req.headers as Record<string, unknown>);
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
+    const docs = await strategiesCol().find({ userId }).sort({ updatedAt: -1 }).toArray();
 
     return {
       strategies: docs.map((s) => ({
@@ -32,8 +49,11 @@ export async function registerStrategyRoutes(app: FastifyInstance) {
 
   // ── Get a single strategy ────────────────────────────────────────────────
   app.get<{ Params: { id: string } }>("/:id", async (request, reply) => {
+    const token = getSessionToken(request.headers as Record<string, unknown>);
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
     const { id } = request.params;
-    const doc = await strategiesCol().findOne({ _id: id });
+    const doc = await strategiesCol().findOne({ _id: id, userId });
     if (!doc) return reply.status(404).send({ error: "Strategy not found" });
 
     // Return in StrategyGraph-compatible shape
@@ -41,14 +61,17 @@ export async function registerStrategyRoutes(app: FastifyInstance) {
   });
 
   // ── Create / save a strategy ─────────────────────────────────────────────
-  app.post("/", async (request) => {
+  app.post("/", async (request, reply) => {
+    const token = getSessionToken(request.headers as Record<string, unknown>);
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
     const body = request.body as StrategyGraph & { userId?: string };
     const id = body.id || nanoid();
     const now = new Date().toISOString();
 
     const doc = {
       _id: id,
-      userId: body.userId || "anonymous",
+      userId,
       name: body.name || "Untitled Strategy",
       description: (body as unknown as Record<string, unknown>).description as string || "",
       nodes: body.nodes || [],
@@ -70,15 +93,18 @@ export async function registerStrategyRoutes(app: FastifyInstance) {
 
   // ── Update a strategy ────────────────────────────────────────────────────
   app.put<{ Params: { id: string } }>("/:id", async (request, reply) => {
+    const token = getSessionToken(request.headers as Record<string, unknown>);
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
     const { id } = request.params;
-    const existing = await strategiesCol().findOne({ _id: id });
+    const existing = await strategiesCol().findOne({ _id: id, userId });
     if (!existing) return reply.status(404).send({ error: "Strategy not found" });
 
     const body = request.body as Partial<StrategyGraph>;
     const { id: _stripId, ...updates } = body as Record<string, unknown>;
 
     await strategiesCol().updateOne(
-      { _id: id },
+      { _id: id, userId },
       { $set: { ...updates, updatedAt: new Date().toISOString() } },
     );
 
@@ -87,8 +113,11 @@ export async function registerStrategyRoutes(app: FastifyInstance) {
 
   // ── Delete a strategy ────────────────────────────────────────────────────
   app.delete<{ Params: { id: string } }>("/:id", async (request, reply) => {
+    const token = getSessionToken(request.headers as Record<string, unknown>);
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
     const { id } = request.params;
-    const result = await strategiesCol().deleteOne({ _id: id });
+    const result = await strategiesCol().deleteOne({ _id: id, userId });
     if (result.deletedCount === 0) {
       return reply.status(404).send({ error: "Strategy not found" });
     }

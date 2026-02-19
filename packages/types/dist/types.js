@@ -50,6 +50,7 @@ export var BlockType;
     BlockType["ThresholdCompare"] = "threshold_compare";
     BlockType["Cooldown"] = "cooldown";
     BlockType["MathOp"] = "math_op";
+    BlockType["Formula"] = "formula";
     BlockType["PositionSizer"] = "position_sizer";
     BlockType["ProbabilityCalc"] = "probability_calc";
     BlockType["ExpectedValue"] = "expected_value";

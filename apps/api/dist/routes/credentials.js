@@ -35,7 +35,7 @@ export async function getCredentials(userId) {
         isConfigured: true,
     };
 }
-const CLOB_HOST = "https://clob.polymarket.com";
+const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
 const CHAIN_ID = 137;
 export async function registerCredentialRoutes(app) {
     // ── Get credential status (never returns private key or secret) ──────────

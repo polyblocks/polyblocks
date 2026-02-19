@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Input, Select, Button } from "@polyblocks/ui";
-import { RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search, Loader2, TrendingDown, TrendingUp } from "lucide-react";
 
 interface MarketResult {
   conditionId?: string;
@@ -23,9 +23,10 @@ interface CryptoMarketPickerProps {
 }
 
 const TIMEFRAME_OPTIONS = [
-  { value: "1h", label: "1 hour" },
-  { value: "15m", label: "15 mins" },
+  { value: "1m", label: "1 min" },
   { value: "5m", label: "5 mins" },
+  { value: "15m", label: "15 mins" },
+  { value: "1h", label: "1 hour" },
 ];
 
 const CRYPTO_ALIASES: Record<string, string[]> = {
@@ -54,8 +55,12 @@ function matchesTimeframe(text: string, timeframe: string): boolean {
     if (timeframe === "1h") return diff >= 55 && diff <= 65;
     if (timeframe === "15m") return diff >= 13 && diff <= 17;
     if (timeframe === "5m") return diff >= 3 && diff <= 7;
+    if (timeframe === "1m") return diff >= 0 && diff <= 2;
   }
   
+  if (timeframe === "1m") {
+    return /1\s*min|1\s*mins|1m|1[-\s]?minute|1\s*minutes/.test(lower);
+  }
   if (timeframe === "1h") {
     return /1\s*hour|1\s*hr|1h|next\s*hour|next\s*1\s*hour|next\s*1\s*hr/.test(lower);
   }
@@ -74,21 +79,179 @@ function getCryptoTokens(symbol: string): string[] {
   return CRYPTO_ALIASES[upper] || [upper];
 }
 
+function parseIsoMs(iso?: string): number | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function pickActiveMarket(markets: MarketResult[], nowMs: number): MarketResult | null {
+  const activeNow = markets
+    .map((m) => {
+      const startMs = parseIsoMs(m.startDate);
+      const endMs = parseIsoMs(m.endDate);
+      return { m, startMs, endMs };
+    })
+    .filter(({ m, startMs, endMs }) => {
+      if (!m.conditionId) return false;
+      if (m.active === false || m.closed === true) return false;
+      if (startMs === null && endMs === null) return false;
+      const start = startMs ?? -Infinity;
+      const end = endMs ?? Infinity;
+      return start <= nowMs && nowMs < end;
+    })
+    .sort((a, b) => (b.startMs ?? 0) - (a.startMs ?? 0));
+
+  if (activeNow.length > 0) return activeNow[0].m;
+  return markets.length > 0 ? markets[0] : null;
+}
+
+function formatTimeRange(startIso?: string, endIso?: string) {
+  const start = startIso ? new Date(startIso) : null;
+  const end = endIso ? new Date(endIso) : null;
+  const fmt = (d: Date) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (start && end) return `${fmt(start)} – ${fmt(end)}`;
+  if (start) return `from ${fmt(start)}`;
+  if (end) return `until ${fmt(end)}`;
+  return "";
+}
+
+function arraysEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function timeframeToMs(timeframe: string): number | null {
+  const tf = timeframe.trim().toLowerCase();
+  const m = tf.match(/^(\d+)\s*(m|h)$/);
+  if (!m) return null;
+  const n = Number.parseInt(m[1], 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = m[2];
+  if (unit === "m") return n * 60_000;
+  if (unit === "h") return n * 60 * 60_000;
+  return null;
+}
+
+const CRYPTO_OPTIONS = [
+  { value: "BTC", label: "BTC" },
+  { value: "ETH", label: "ETH" },
+  { value: "SOL", label: "SOL" },
+  { value: "DOGE", label: "DOGE" },
+  { value: "XRP", label: "XRP" },
+  { value: "AVAX", label: "AVAX" },
+  { value: "TRUMP", label: "TRUMP" },
+  { value: "__custom__", label: "Custom…" },
+];
+
 export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMarketPickerProps) {
-  const cryptoSymbol = String(config.cryptoSymbol || "BTC");
-  const timeframe = String(config.timeframe || "1h");
+  const cryptoSymbol = String(config.cryptoSymbol || "BTC").toUpperCase();
+  const timeframe = String(config.timeframe || "5m");
   const searchQuery = String(config.searchQuery || "");
   const [results, setResults] = useState<MarketResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [midpoints, setMidpoints] = useState<Record<string, number | null>>({});
+  const [trend, setTrend] = useState<{ dir: "up" | "down" | "flat"; delta: number } | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const prevYesMidRef = useRef<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const isFirstLoadRef = useRef(true);
+  const configRef = useRef(config);
 
   const cryptoTokens = useMemo(() => getCryptoTokens(cryptoSymbol), [cryptoSymbol]);
+  const cryptoOptionValue = useMemo(() => {
+    const known = CRYPTO_OPTIONS.some((o) => o.value === cryptoSymbol);
+    return known ? cryptoSymbol : "__custom__";
+  }, [cryptoSymbol]);
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  const applyMarketToConfig = useCallback((m: MarketResult) => {
+    const cfg = configRef.current;
+    if (m.conditionId && m.conditionId !== cfg.conditionId) {
+      onConfigChange("conditionId", m.conditionId);
+    }
+    const tokenId = m.clobTokenIds?.[0] || "";
+    if (tokenId && tokenId !== cfg.tokenId) {
+      onConfigChange("tokenId", tokenId);
+    }
+    if (m.question !== undefined && m.question !== cfg.question) {
+      onConfigChange("question", m.question || "");
+    }
+    if (m.image !== undefined && m.image !== cfg.image) {
+      onConfigChange("image", m.image || "");
+    }
+    if (m.groupItemTitle !== undefined && m.groupItemTitle !== cfg.groupItemTitle) {
+      onConfigChange("groupItemTitle", m.groupItemTitle || "");
+    }
+    if (m.slug !== undefined && m.slug !== cfg.eventSlug) {
+      onConfigChange("eventSlug", m.slug || "");
+    }
+    const eventTitle = m.groupItemTitle || m.question || "";
+    if (eventTitle !== cfg.eventTitle) {
+      onConfigChange("eventTitle", eventTitle);
+    }
+    if (!arraysEqual(m.outcomes, cfg.outcomes)) {
+      onConfigChange("outcomes", m.outcomes || []);
+    }
+    if (!arraysEqual(m.outcomePrices, cfg.outcomePrices)) {
+      onConfigChange("outcomePrices", m.outcomePrices || []);
+    }
+    if (!arraysEqual(m.clobTokenIds, cfg.clobTokenIds)) {
+      onConfigChange("clobTokenIds", m.clobTokenIds || []);
+    }
+  }, [onConfigChange]);
+
+  const fetchMidpoints = useCallback(async (tokenIds: string[], signal: AbortSignal) => {
+    const ids = tokenIds.filter(Boolean).slice(0, 2);
+    if (ids.length === 0) {
+      setMidpoints({});
+      setTrend(null);
+      prevYesMidRef.current = null;
+      return;
+    }
+    const entries = await Promise.all(ids.map(async (tokenId) => {
+      const res = await fetch(`/api/markets/midpoint?token_id=${encodeURIComponent(tokenId)}`, { signal });
+      if (!res.ok) throw new Error(`Failed to fetch midpoint (${res.status})`);
+      const data = await res.json() as { mid?: string };
+      const mid = data?.mid !== undefined ? Number.parseFloat(String(data.mid)) : NaN;
+      return [tokenId, Number.isFinite(mid) ? mid : null] as const;
+    }));
+    const next = Object.fromEntries(entries) as Record<string, number | null>;
+    setMidpoints(next);
+
+    const yesMid = next[ids[0]] ?? null;
+    const prev = prevYesMidRef.current;
+    if (yesMid !== null && prev !== null && Number.isFinite(yesMid) && Number.isFinite(prev)) {
+      const delta = yesMid - prev;
+      const dir: "up" | "down" | "flat" = Math.abs(delta) < 0.0001 ? "flat" : (delta > 0 ? "up" : "down");
+      setTrend({ dir, delta });
+    } else {
+      setTrend(null);
+    }
+    prevYesMidRef.current = yesMid;
+  }, []);
 
   const fetchMarkets = useCallback(async () => {
-    setLoading(true);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const isFirstLoad = isFirstLoadRef.current;
+    setLoading(isFirstLoad);
+    setRefreshing(!isFirstLoad);
     setError("");
     try {
-      const res = await fetch(`/api/markets/search?limit=100&order=startDate`);
+      const res = await fetch(`/api/markets/search?limit=200&order=startDate`, { signal: controller.signal });
       const data = await res.json();
       
       if (!Array.isArray(data)) {
@@ -121,33 +284,52 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
 
       setResults(sorted);
       
-      if (sorted.length > 0) {
-          const latest = sorted[0];
-          if (latest.conditionId && latest.conditionId !== config.conditionId) {
-             onConfigChange("conditionId", latest.conditionId);
-             onConfigChange("tokenId", latest.clobTokenIds?.[0] || "");
-             onConfigChange("question", latest.question || "");
-             onConfigChange("image", latest.image || "");
-             onConfigChange("groupItemTitle", latest.groupItemTitle || "");
-             onConfigChange("eventTitle", latest.question || "");
-             onConfigChange("eventSlug", latest.slug || "");
-             onConfigChange("outcomes", latest.outcomes || []);
-             onConfigChange("outcomePrices", latest.outcomePrices || []);
-             onConfigChange("clobTokenIds", latest.clobTokenIds || []);
-          }
+      const active = pickActiveMarket(sorted, Date.now());
+      if (active) {
+        applyMarketToConfig(active);
+        await fetchMidpoints(active.clobTokenIds || [], controller.signal);
+      } else {
+        setMidpoints({});
+        setTrend(null);
+        prevYesMidRef.current = null;
       }
+      setLastUpdatedAt(Date.now());
+      isFirstLoadRef.current = false;
       
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Failed to fetch markets");
       setResults([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [cryptoSymbol, searchQuery, timeframe, cryptoTokens, config.conditionId, onConfigChange]);
+  }, [applyMarketToConfig, cryptoSymbol, cryptoTokens, fetchMidpoints, searchQuery, timeframe]);
 
   useEffect(() => {
     fetchMarkets();
-  }, [fetchMarkets]);
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [cryptoSymbol, fetchMarkets, searchQuery, timeframe]);
+
+  useEffect(() => {
+    const intervalMs = timeframeToMs(timeframe) ?? 5 * 60_000;
+    const now = Date.now();
+    const nextBoundary = Math.ceil((now + 250) / intervalMs) * intervalMs;
+    const delayMs = Math.max(500, nextBoundary - now);
+
+    let intervalId: number | null = null;
+    const timeoutId = window.setTimeout(() => {
+      fetchMarkets();
+      intervalId = window.setInterval(fetchMarkets, intervalMs);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId !== null) window.clearInterval(intervalId);
+    };
+  }, [fetchMarkets, timeframe]);
 
   const formatDate = (iso?: string) => {
     if (!iso) return "";
@@ -155,11 +337,40 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
     return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   };
 
+  const activeMarket = useMemo(() => {
+    const id = String(config.conditionId || "");
+    if (!id) return null;
+    return results.find((r) => r.conditionId === id) || null;
+  }, [config.conditionId, results]);
+
+  const tokenIds = (config.clobTokenIds as string[] | undefined) || [];
+  const yesTokenId = tokenIds[0];
+  const noTokenId = tokenIds[1];
+  const yesMid = yesTokenId ? midpoints[yesTokenId] ?? null : null;
+  const noMid = noTokenId ? midpoints[noTokenId] ?? null : null;
+
+  const formatPrice = (p: number | null) => {
+    if (p === null) return "—";
+    return `${Math.round(p * 1000) / 10}%`;
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 120px", gap: 8 }}>
+        <Select
+          value={cryptoOptionValue}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "__custom__") return;
+            onConfigChange("cryptoSymbol", v);
+          }}
+        >
+          {CRYPTO_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </Select>
         <Input
-          placeholder="Crypto symbol (BTC, ETH, SOL)"
+          placeholder="Symbol (BTC, ETH, SOL)"
           value={cryptoSymbol}
           onChange={(e) => onConfigChange("cryptoSymbol", e.target.value)}
         />
@@ -183,9 +394,17 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
           />
         </div>
         <Button size="sm" onClick={fetchMarkets} disabled={loading}>
-          <RefreshCw size={14} />
-          Refresh
+          {refreshing ? <Loader2 size={14} /> : <RefreshCw size={14} />}
+          {refreshing ? "Refreshing" : "Refresh"}
         </Button>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12, color: "var(--pb-text-muted)" }}>
+        <div>
+          {activeMarket?.startDate || activeMarket?.endDate ? `Active: ${formatTimeRange(activeMarket.startDate, activeMarket.endDate)}` : ""}
+        </div>
+        <div>
+          {lastUpdatedAt ? `Updated ${new Date(lastUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+        </div>
       </div>
       {error && (
         <div style={{ fontSize: 12, color: "var(--pb-risk)" }}>
@@ -195,6 +414,45 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
       {!error && results.length === 0 && (
         <div style={{ fontSize: 12, color: "var(--pb-text-muted)" }}>
           No live markets found for this crypto/timeframe.
+        </div>
+      )}
+      {!error && activeMarket && (
+        <div className="pb-card" style={{ padding: 12, border: "1px solid var(--pb-border)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>
+              {activeMarket.groupItemTitle || activeMarket.question}
+            </div>
+            {trend?.dir === "up" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--pb-success)", fontSize: 12, fontWeight: 600 }}>
+                <TrendingUp size={14} />
+                {trend.delta > 0 ? "+" : ""}{formatPrice(trend.delta).replace("%", "pp")}
+              </div>
+            )}
+            {trend?.dir === "down" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--pb-risk)", fontSize: 12, fontWeight: 600 }}>
+                <TrendingDown size={14} />
+                {formatPrice(trend.delta).replace("%", "pp")}
+              </div>
+            )}
+            {trend?.dir === "flat" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--pb-text-muted)", fontSize: 12, fontWeight: 600 }}>
+                {formatPrice(0).replace("%", "pp")}
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--pb-text-muted)", marginTop: 6, display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <div>{formatDate(activeMarket.startDate || activeMarket.endDate)}</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <div>
+                <span style={{ color: "var(--pb-text-muted)" }}>YES</span>{" "}
+                <span style={{ fontWeight: 700, color: yesMid !== null ? "var(--pb-text-primary)" : "var(--pb-text-muted)" }}>{formatPrice(yesMid)}</span>
+              </div>
+              <div>
+                <span style={{ color: "var(--pb-text-muted)" }}>NO</span>{" "}
+                <span style={{ fontWeight: 700, color: noMid !== null ? "var(--pb-text-primary)" : "var(--pb-text-muted)" }}>{formatPrice(noMid)}</span>
+              </div>
+            </div>
+          </div>
         </div>
       )}
       {results.slice(0, 6).map((m) => (

@@ -3,13 +3,31 @@
  * Persisted to MongoDB (strategies collection).  Each strategy belongs to a userId.
  */
 import { nanoid } from "nanoid";
-import { strategiesCol } from "../db.js";
+import { sessionsCol, strategiesCol } from "../db.js";
+function getSessionToken(headers) {
+    const token = headers["x-session-token"];
+    return typeof token === "string" ? token : "";
+}
+async function resolveSession(token) {
+    if (!token)
+        return null;
+    const session = await sessionsCol().findOne({ _id: token });
+    if (!session)
+        return null;
+    if (session.expiresAt < new Date()) {
+        await sessionsCol().deleteOne({ _id: token });
+        return null;
+    }
+    return session.userId;
+}
 export async function registerStrategyRoutes(app) {
     // ── List all strategies (optionally filter by userId query param) ────────
-    app.get("/", async (req) => {
-        const { userId } = req.query;
-        const filter = userId ? { userId } : {};
-        const docs = await strategiesCol().find(filter).sort({ updatedAt: -1 }).toArray();
+    app.get("/", async (req, reply) => {
+        const token = getSessionToken(req.headers);
+        const userId = await resolveSession(token);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
+        const docs = await strategiesCol().find({ userId }).sort({ updatedAt: -1 }).toArray();
         return {
             strategies: docs.map((s) => ({
                 id: s._id,
@@ -25,21 +43,29 @@ export async function registerStrategyRoutes(app) {
     });
     // ── Get a single strategy ────────────────────────────────────────────────
     app.get("/:id", async (request, reply) => {
+        const token = getSessionToken(request.headers);
+        const userId = await resolveSession(token);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
         const { id } = request.params;
-        const doc = await strategiesCol().findOne({ _id: id });
+        const doc = await strategiesCol().findOne({ _id: id, userId });
         if (!doc)
             return reply.status(404).send({ error: "Strategy not found" });
         // Return in StrategyGraph-compatible shape
         return { ...doc, id: doc._id };
     });
     // ── Create / save a strategy ─────────────────────────────────────────────
-    app.post("/", async (request) => {
+    app.post("/", async (request, reply) => {
+        const token = getSessionToken(request.headers);
+        const userId = await resolveSession(token);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
         const body = request.body;
         const id = body.id || nanoid();
         const now = new Date().toISOString();
         const doc = {
             _id: id,
-            userId: body.userId || "anonymous",
+            userId,
             name: body.name || "Untitled Strategy",
             description: body.description || "",
             nodes: body.nodes || [],
@@ -54,19 +80,27 @@ export async function registerStrategyRoutes(app) {
     });
     // ── Update a strategy ────────────────────────────────────────────────────
     app.put("/:id", async (request, reply) => {
+        const token = getSessionToken(request.headers);
+        const userId = await resolveSession(token);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
         const { id } = request.params;
-        const existing = await strategiesCol().findOne({ _id: id });
+        const existing = await strategiesCol().findOne({ _id: id, userId });
         if (!existing)
             return reply.status(404).send({ error: "Strategy not found" });
         const body = request.body;
         const { id: _stripId, ...updates } = body;
-        await strategiesCol().updateOne({ _id: id }, { $set: { ...updates, updatedAt: new Date().toISOString() } });
+        await strategiesCol().updateOne({ _id: id, userId }, { $set: { ...updates, updatedAt: new Date().toISOString() } });
         return { id, updated: true };
     });
     // ── Delete a strategy ────────────────────────────────────────────────────
     app.delete("/:id", async (request, reply) => {
+        const token = getSessionToken(request.headers);
+        const userId = await resolveSession(token);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
         const { id } = request.params;
-        const result = await strategiesCol().deleteOne({ _id: id });
+        const result = await strategiesCol().deleteOne({ _id: id, userId });
         if (result.deletedCount === 0) {
             return reply.status(404).send({ error: "Strategy not found" });
         }

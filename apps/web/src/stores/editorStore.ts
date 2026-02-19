@@ -18,6 +18,7 @@ import {
   StrategyStatus,
   BlockType,
   BLOCK_REGISTRY,
+  NodeCategory,
   PortType,
 } from "@polyblocks/types";
 import { validateStrategy } from "@polyblocks/engine-core";
@@ -120,8 +121,63 @@ function strategyEdgeToFlow(se: StrategyEdge): Edge {
     sourceHandle: se.sourceHandle,
     target: se.target,
     targetHandle: se.targetHandle,
-    type: "smoothstep",
-    animated: true,
+    type: "custom",
+  };
+}
+
+const MIN_EDGE_ANIMATION_MS = 150;
+const DEFAULT_EDGE_ANIMATION_MS = 1000;
+
+function hasSignalInput(def?: { inputs: Array<{ id: string; type: string }> }) {
+  if (!def) return false;
+  return def.inputs.some(
+    (p) => p.type === PortType.Signal || p.id === "signal" || p.id === "trigger",
+  );
+}
+
+function isContinuousDataSource(def?: { category?: NodeCategory; inputs: Array<{ id: string; type: string }> }) {
+  if (!def) return false;
+  const isDataLike =
+    def.category === NodeCategory.Data || def.category === NodeCategory.Market;
+  return isDataLike && !hasSignalInput(def);
+}
+
+function getIntervalDurationMs(node?: Node) {
+  if (!node) return DEFAULT_EDGE_ANIMATION_MS;
+  const raw = Number((node.data as { config?: Record<string, unknown> })?.config?.intervalMs);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_EDGE_ANIMATION_MS;
+  return Math.max(MIN_EDGE_ANIMATION_MS, raw);
+}
+
+function applyEdgeVisuals(edge: Edge, nodes: Node[]): Edge {
+  const sourceNode = nodes.find((n) => n.id === edge.source);
+  const sourceType = sourceNode?.data?.blockType as BlockType | undefined;
+  const sourceDef = sourceType ? BLOCK_REGISTRY[sourceType] : undefined;
+  const continuous = isContinuousDataSource(sourceDef);
+  const isInterval = sourceType === BlockType.IntervalTrigger;
+  const isTrigger = sourceDef?.category === NodeCategory.Trigger;
+
+  let animated = true;
+  let className: string | undefined;
+  let animationDurationMs = DEFAULT_EDGE_ANIMATION_MS;
+
+  if (continuous) {
+    animated = false;
+    className = "edge-continuous";
+  } else if (isTrigger) {
+    animated = true;
+    className = isInterval ? "edge-interval" : "edge-trigger";
+    animationDurationMs = isInterval ? getIntervalDurationMs(sourceNode) : DEFAULT_EDGE_ANIMATION_MS;
+  }
+
+  return {
+    ...edge,
+    animated,
+    className,
+    data: {
+      ...(edge.data as Record<string, unknown>),
+      animationDurationMs,
+    },
   };
 }
 
@@ -292,7 +348,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
     }
 
-    set({ edges: addEdge({ ...connection, type: "smoothstep", animated: true }, get().edges) });
+    const nextEdges = addEdge({ ...connection, type: "custom" }, get().edges);
+    set({ edges: nextEdges.map((edge) => applyEdgeVisuals(edge, nodes)) });
   },
 
   // ── Node operations ───────────────────────────────────────────────────────
@@ -347,12 +404,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   updateNodeConfig: (nodeId, config) => {
-    set({
-      nodes: get().nodes.map((n) =>
+    set((state) => {
+      const nextNodes = state.nodes.map((n) =>
         n.id === nodeId
           ? { ...n, data: { ...n.data, config: { ...(n.data.config as Record<string, unknown>), ...config } } }
           : n,
-      ),
+      );
+      return {
+        nodes: nextNodes,
+        edges: state.edges.map((edge) => applyEdgeVisuals(edge, nextNodes)),
+      };
     });
   },
 
@@ -400,12 +461,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       runAbortController.abort();
       runAbortController = null;
     }
+    const nextNodes = graph.nodes.map(strategyNodeToFlow);
+    const nextEdges = graph.edges.map(strategyEdgeToFlow).map((edge) => applyEdgeVisuals(edge, nextNodes));
     set({
       strategyId: graph.id,
       strategyName: graph.name,
       strategyStatus: graph.status,
-      nodes: graph.nodes.map(strategyNodeToFlow),
-      edges: graph.edges.map(strategyEdgeToFlow),
+      nodes: nextNodes,
+      edges: nextEdges,
       selectedNodeId: null,
       validationIssues: [],
       // Reset — will be loaded from API
@@ -419,62 +482,63 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
 
     // Load trades & logs from API (async, non-blocking)
-    const userId = getUserId();
-    fetch(`/api/paper-trades/${graph.id}?userId=${userId}`, { headers: authHeaders() })
-      .then((r) => r.ok ? r.json() : { trades: [] })
-      .then((data: { trades: PaperTrade[] }) => {
-        if (get().strategyId === graph.id) {
-          const trades = data.trades || [];
-          // Rebuild positions from trades
-          const posMap = new Map<string, PaperPosition>();
-          for (const t of [...trades].reverse()) {
-            const key = `${t.marketConditionId}_${t.tokenId}`;
-            const existing = posMap.get(key);
-            const sizeChange = t.side === "BUY" ? t.size : -t.size;
-            if (existing) {
-              const newSize = existing.size + sizeChange;
-              if (Math.abs(newSize) < 0.001) {
-                posMap.delete(key);
-              } else {
-                if (sizeChange > 0) {
-                  existing.avgEntryPrice =
-                    (existing.avgEntryPrice * existing.size + t.price * sizeChange) /
-                    (existing.size + sizeChange);
+    if (typeof window !== "undefined") {
+      const userId = getUserId();
+      fetch(`/api/paper-trades/${graph.id}?userId=${userId}`, { headers: authHeaders() })
+        .then((r) => r.ok ? r.json() : { trades: [] })
+        .then((data: { trades: PaperTrade[] }) => {
+          if (get().strategyId === graph.id) {
+            const trades = data.trades || [];
+            const posMap = new Map<string, PaperPosition>();
+            for (const t of [...trades].reverse()) {
+              const key = `${t.marketConditionId}_${t.tokenId}`;
+              const existing = posMap.get(key);
+              const sizeChange = t.side === "BUY" ? t.size : -t.size;
+              if (existing) {
+                const newSize = existing.size + sizeChange;
+                if (Math.abs(newSize) < 0.001) {
+                  posMap.delete(key);
+                } else {
+                  if (sizeChange > 0) {
+                    existing.avgEntryPrice =
+                      (existing.avgEntryPrice * existing.size + t.price * sizeChange) /
+                      (existing.size + sizeChange);
+                  }
+                  existing.size = newSize;
                 }
-                existing.size = newSize;
+              } else if (sizeChange > 0) {
+                posMap.set(key, {
+                  strategyId: t.strategyId,
+                  marketConditionId: t.marketConditionId,
+                  tokenId: t.tokenId,
+                  side: t.side === "BUY" ? "YES" : "NO",
+                  size: sizeChange,
+                  avgEntryPrice: t.price,
+                  currentPrice: t.price,
+                  unrealizedPnl: 0,
+                  openedAt: t.executedAt,
+                });
               }
-            } else if (sizeChange > 0) {
-              posMap.set(key, {
-                strategyId: t.strategyId,
-                marketConditionId: t.marketConditionId,
-                tokenId: t.tokenId,
-                side: t.side === "BUY" ? "YES" : "NO",
-                size: sizeChange,
-                avgEntryPrice: t.price,
-                currentPrice: t.price,
-                unrealizedPnl: 0,
-                openedAt: t.executedAt,
-              });
             }
+            const positionsArr = Array.from(posMap.values());
+            updatePositionPrices(positionsArr).then(() => {
+              if (get().strategyId === graph.id) {
+                set({ trades, positions: positionsArr });
+              }
+            });
           }
-          const positionsArr = Array.from(posMap.values());
-          updatePositionPrices(positionsArr).then(() => {
-            if (get().strategyId === graph.id) {
-              set({ trades, positions: positionsArr });
-            }
-          });
-        }
-      })
-      .catch(() => { });
+        })
+        .catch(() => { });
 
-    fetch(`/api/paper-trades/${graph.id}/logs?userId=${userId}`, { headers: authHeaders() })
-      .then((r) => r.ok ? r.json() : { logs: [] })
-      .then((data: { logs: ExecutionLog[] }) => {
-        if (get().strategyId === graph.id) {
-          set({ logs: (data.logs || []).slice(-100) });
-        }
-      })
-      .catch(() => { });
+      fetch(`/api/paper-trades/${graph.id}/logs?userId=${userId}`, { headers: authHeaders() })
+        .then((r) => r.ok ? r.json() : { logs: [] })
+        .then((data: { logs: ExecutionLog[] }) => {
+          if (get().strategyId === graph.id) {
+            set({ logs: (data.logs || []).slice(-100) });
+          }
+        })
+        .catch(() => { });
+    }
   },
 
   newStrategy: () => {

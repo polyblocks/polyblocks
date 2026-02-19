@@ -79,6 +79,8 @@ function getConfigPreview(blockType: BlockType, config: Record<string, unknown>)
     case BlockType.RecentCryptoMarket: {
       const symbol = String(config.cryptoSymbol || "BTC");
       const tf = String(config.timeframe || "1h");
+      const q = config.question as string | undefined;
+      if (q) return q.length > 30 ? q.slice(0, 28) + "…" : q;
       return `${symbol} · ${tf}`;
     }
     case BlockType.NotGate:

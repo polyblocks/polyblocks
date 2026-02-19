@@ -78,9 +78,13 @@ function matchesTimeframe(text: string, timeframe: string): boolean {
     const endMin = toMinutes(eh, em, eap);
     let diff = endMin - startMin;
     if (diff < 0) diff += 12 * 60;
-    if (timeframe === "1h") return diff === 60;
-    if (timeframe === "15m") return diff === 15;
-    if (timeframe === "5m") return diff === 5;
+    if (timeframe === "1h") return diff >= 55 && diff <= 65;
+    if (timeframe === "15m") return diff >= 13 && diff <= 17;
+    if (timeframe === "5m") return diff >= 3 && diff <= 7;
+    if (timeframe === "1m") return diff >= 0 && diff <= 2;
+  }
+  if (timeframe === "1m") {
+    return /1\s*min|1\s*mins|1m|1[-\s]?minute|1\s*minutes/.test(lower);
   }
   if (timeframe === "1h") {
     return /1\s*hour|1\s*hr|1h|next\s*hour|next\s*1\s*hour|next\s*1\s*hr/.test(lower);
@@ -101,6 +105,7 @@ const CRYPTO_ALIASES: Record<string, string[]> = {
   DOGE: ["DOGE", "Dogecoin"],
   XRP: ["XRP", "Ripple"],
   AVAX: ["AVAX", "Avalanche"],
+  TRUMP: ["TRUMP", "Donald Trump"],
 };
 
 function getCryptoTokens(symbol: string): string[] {
@@ -217,7 +222,7 @@ const recentCryptoMarketHandler: NodeHandler = {
   async execute(node, inputs, ctx) {
     if (inputs.trigger === false) return { market: null };
     const cryptoSymbol = String(node.config.cryptoSymbol || "BTC");
-    const timeframe = String(node.config.timeframe || "1h");
+    const timeframe = String(node.config.timeframe || "5m");
     const searchQuery = String(node.config.searchQuery || "");
     const tokens = getCryptoTokens(cryptoSymbol);
     const query = searchQuery.trim();
@@ -270,27 +275,40 @@ const recentCryptoMarketHandler: NodeHandler = {
         return bTime - aTime;
       });
 
-    const latest = filtered[0];
-    if (!latest?.conditionId) {
+    const nowMs = Date.now();
+    const parseMs = (iso: string) => {
+      const ms = Date.parse(iso);
+      return Number.isFinite(ms) ? ms : null;
+    };
+    const activePeriod = filtered.find((m) => {
+      const startMs = m.startDate ? parseMs(m.startDate) : null;
+      const endMs = m.endDate ? parseMs(m.endDate) : null;
+      if (startMs === null && endMs === null) return false;
+      const start = startMs ?? -Infinity;
+      const end = endMs ?? Infinity;
+      return start <= nowMs && nowMs < end;
+    }) || filtered[0];
+
+    if (!activePeriod?.conditionId) {
       ctx.log(node.id, "No matching live crypto market found");
       return { market: null };
     }
 
     let market: Record<string, unknown> = {
-      conditionId: latest.conditionId,
-      clobTokenIds: latest.clobTokenIds,
-      outcomes: latest.outcomes,
-      outcomePrices: latest.outcomePrices,
-      question: latest.question,
-      image: latest.image,
-      groupItemTitle: latest.groupItemTitle,
+      conditionId: activePeriod.conditionId,
+      clobTokenIds: activePeriod.clobTokenIds,
+      outcomes: activePeriod.outcomes,
+      outcomePrices: activePeriod.outcomePrices,
+      question: activePeriod.question,
+      image: activePeriod.image,
+      groupItemTitle: activePeriod.groupItemTitle,
       active: true,
       closed: false,
     };
 
-    if (!latest.clobTokenIds || latest.clobTokenIds.length === 0) {
-      const cached = await fetchMarketCached(latest.conditionId) as Record<string, unknown>;
-      market = { ...cached, conditionId: latest.conditionId };
+    if (!activePeriod.clobTokenIds || activePeriod.clobTokenIds.length === 0) {
+      const cached = await fetchMarketCached(activePeriod.conditionId) as Record<string, unknown>;
+      market = { ...cached, conditionId: activePeriod.conditionId };
       if (!market.clobTokenIds) {
         const tokensFromMarket = market.tokens as Array<{ token_id: string }> | undefined;
         if (tokensFromMarket && Array.isArray(tokensFromMarket)) {
@@ -479,6 +497,36 @@ const mathOpHandler: NodeHandler = {
     }
 
     return { result };
+  },
+};
+
+const formulaHandler: NodeHandler = {
+  async execute(node, inputs, ctx) {
+    const expr = String(node.config.expression || "a + b");
+    const a = Number(inputs.a || 0);
+    const b = Number(inputs.b || 0);
+    const c = Number(inputs.c || 0);
+
+    try {
+      // Basic math evaluation using Function constructor
+      // Only allow safe characters: 0-9 . + - * / % ( ) a b c and whitespace, maybe math functions like Math.max
+      // For now, simple regex check to prevent arbitrary code execution
+      if (!/^[0-9.+\-*/%()abc\s]+$/.test(expr)) {
+        throw new Error("Invalid characters. Only numbers, operators (+-*/%), and variables (a, b, c) allowed.");
+      }
+      
+      const func = new Function("a", "b", "c", `return ${expr}`);
+      const result = Number(func(a, b, c));
+      
+      if (!Number.isFinite(result)) throw new Error("Result is not a finite number");
+      
+      ctx.log(node.id, `Formula: ${expr} (a=${a}, b=${b}, c=${c}) = ${result}`);
+      return { result };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      ctx.log(node.id, `❌ Formula Error: ${msg}`);
+      throw new Error(`Formula failed: ${msg}`);
+    }
   },
 };
 
@@ -1146,6 +1194,7 @@ export function createPaperHandlers(): NodeHandlerRegistry {
   registry.set(BlockType.ThresholdCompare, thresholdCompareHandler);
   registry.set(BlockType.Cooldown, cooldownHandler);
   registry.set(BlockType.MathOp, mathOpHandler);
+  registry.set(BlockType.Formula, formulaHandler);
   registry.set(BlockType.MaxExposure, maxExposureHandler);
   registry.set(BlockType.DailyLossLimit, dailyLossLimitHandler);
   registry.set(BlockType.KillSwitch, killSwitchHandler);

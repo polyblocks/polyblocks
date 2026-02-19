@@ -1,20 +1,21 @@
 /**
  * Strategy Scheduler
  *
- * Uses BullMQ to schedule strategy graph evaluations at configurable intervals.
- * Falls back to a simple setInterval-based scheduler if Redis is unavailable.
+ * Server-side scheduler that keeps strategies running even when the user
+ * navigates away from the editor. Supports both paper and live modes.
  */
 import { evaluateGraph } from "@polyblocks/engine-core";
 import { createPaperHandlers } from "./paperHandlers.js";
+import { createLiveHandlers } from "./liveHandlers.js";
 import { nanoid } from "nanoid";
 /**
  * In-memory scheduler for MVP.
- * For production, replace with BullMQ repeatable jobs backed by Redis.
+ * Strategies persist across page navigations — they run server-side.
  */
 class StrategyScheduler {
     schedules = new Map();
     listeners = new Map();
-    start(graph, intervalMs) {
+    start(graph, intervalMs, mode = "paper") {
         // Stop existing schedule for this strategy
         if (this.schedules.has(graph.id)) {
             this.stop(graph.id);
@@ -22,17 +23,22 @@ class StrategyScheduler {
         const entry = {
             graph,
             intervalMs,
-            isRunning: false,
+            mode,
+            isExecuting: false,
+            startedAt: new Date().toISOString(),
+            iteration: 0,
+            recentLogs: [],
+            persistentState: new Map(),
         };
         // Run immediately, then on interval
         this.runOnce(entry);
         entry.timer = setInterval(() => {
-            if (!entry.isRunning) {
+            if (!entry.isExecuting) {
                 this.runOnce(entry);
             }
         }, intervalMs);
         this.schedules.set(graph.id, entry);
-        console.log(`[Scheduler] Started strategy ${graph.id} (${graph.name}) every ${intervalMs}ms`);
+        console.log(`[Scheduler] Started strategy ${graph.id} (${graph.name}) in ${mode} mode every ${intervalMs}ms`);
     }
     stop(strategyId) {
         const entry = this.schedules.get(strategyId);
@@ -50,15 +56,53 @@ class StrategyScheduler {
     isScheduled(strategyId) {
         return this.schedules.has(strategyId);
     }
+    /** Returns true if any strategy is currently scheduled. */
+    hasAnyRunning() {
+        return this.schedules.size > 0;
+    }
+    /** Returns the ID of the currently running strategy, or null. */
+    getRunningStrategyId() {
+        for (const [id] of this.schedules) {
+            return id;
+        }
+        return null;
+    }
     getStatus(strategyId) {
         const entry = this.schedules.get(strategyId);
         if (!entry)
             return null;
         return {
+            strategyId,
+            strategyName: entry.graph.name,
             intervalMs: entry.intervalMs,
-            isRunning: entry.isRunning,
+            mode: entry.mode,
+            isExecuting: entry.isExecuting,
+            startedAt: entry.startedAt,
+            iteration: entry.iteration,
+            lastError: entry.lastError,
             lastResult: entry.lastResult,
         };
+    }
+    /** Get status of ALL running strategies */
+    getAllRunning() {
+        const result = [];
+        for (const [id, entry] of this.schedules) {
+            result.push({
+                strategyId: id,
+                strategyName: entry.graph.name,
+                mode: entry.mode,
+                startedAt: entry.startedAt,
+                iteration: entry.iteration,
+                intervalMs: entry.intervalMs,
+                lastError: entry.lastError,
+            });
+        }
+        return result;
+    }
+    /** Get recent logs for a scheduled strategy */
+    getRecentLogs(strategyId) {
+        const entry = this.schedules.get(strategyId);
+        return entry?.recentLogs || [];
     }
     onResult(strategyId, listener) {
         if (!this.listeners.has(strategyId)) {
@@ -67,21 +111,29 @@ class StrategyScheduler {
         this.listeners.get(strategyId).push(listener);
     }
     async runOnce(entry) {
-        entry.isRunning = true;
+        entry.isExecuting = true;
         const runId = nanoid();
         const ctx = {
             runId,
             strategyId: entry.graph.id,
-            mode: "paper",
+            mode: entry.mode,
             log: (nodeId, message, data) => {
                 console.log(`  [${nodeId}] ${message}`, data ?? "");
             },
-            state: new Map(),
+            // Reuse persistent state across runs so dedup (UserActivity),
+            // cooldowns, and exposure tracking survive between iterations
+            state: entry.persistentState,
         };
         try {
-            const handlers = createPaperHandlers();
+            const handlers = entry.mode === "live" ? createLiveHandlers() : createPaperHandlers();
             const result = await evaluateGraph(entry.graph, handlers, ctx);
             entry.lastResult = result;
+            entry.iteration++;
+            entry.lastError = undefined;
+            // Keep last 20 logs
+            entry.recentLogs.unshift(result);
+            if (entry.recentLogs.length > 20)
+                entry.recentLogs.length = 20;
             // Notify listeners
             const listeners = this.listeners.get(entry.graph.id) || [];
             for (const listener of listeners) {
@@ -89,10 +141,12 @@ class StrategyScheduler {
             }
         }
         catch (err) {
-            console.error(`[Scheduler] Error running strategy ${entry.graph.id}:`, err);
+            const msg = err instanceof Error ? err.message : String(err);
+            entry.lastError = msg;
+            console.error(`[Scheduler] Error running strategy ${entry.graph.id}:`, msg);
         }
         finally {
-            entry.isRunning = false;
+            entry.isExecuting = false;
         }
     }
 }
