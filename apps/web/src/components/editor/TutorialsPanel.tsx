@@ -272,6 +272,23 @@ const BLOCK_TUTORIALS: Record<BlockType, {
       "📋 Example: Price Data (YES midpoint) + Price Data (NO midpoint) → Math (Add) → Debug Log",
     ],
   },
+  [BlockType.Formula]: {
+    purpose: "Evaluate a custom mathematical expression using multiple inputs.",
+    howItWorks: "Uses your expression (e.g., (a + b) / c) and substitutes the input values to produce a single numeric result.",
+    inputExplanations: {
+      a: "First input variable used in the formula.",
+      b: "Second input variable used in the formula.",
+      c: "Third input variable used in the formula.",
+    },
+    outputExplanations: {
+      result: "The numeric result of your expression.",
+    },
+    tips: [
+      "Use parentheses to control order of operations",
+      "Start with a simple expression like a + b, then expand",
+      "📋 Example: Price Data → Formula (a * 100) → Notification",
+    ],
+  },
   [BlockType.MaxExposure]: {
     purpose: "Safety guard — blocks orders if your total position size would exceed a USD limit.",
     howItWorks: "Checks current total exposure across all positions. If placing a new order would exceed the limit, the signal is blocked.",

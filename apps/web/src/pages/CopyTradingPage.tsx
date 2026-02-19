@@ -26,7 +26,6 @@ import {
   XCircle,
   TrendingUp,
   BarChart3,
-  Search,
 } from "lucide-react";
 import { Button, Input } from "@polyblocks/ui";
 import { fetchWalletStats } from "../utils/polymarketData";
@@ -118,8 +117,6 @@ export default function CopyTradingPage() {
 
       if (isSuggested) {
         // High performance stats for suggested wallets
-        const baseProfit = parseFloat(isSuggested.profit.replace(/[^0-9.-]+/g,""));
-        
         // Generate a nice upward trending equity curve
         let current = 100;
         const curve = [100];

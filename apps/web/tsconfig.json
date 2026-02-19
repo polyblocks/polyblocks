@@ -5,6 +5,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "noEmit": true,
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
     "paths": {
       "@/*": ["./src/*"]
     }
