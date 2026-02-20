@@ -100,7 +100,7 @@ export default function OnboardingTutorial() {
         <div>
           <h3 style={{ marginBottom: "8px", fontSize: "16px" }}>5. Ready to go Pro?</h3>
           <p style={{ fontSize: "14px", lineHeight: "1.5" }}>
-            Upgrade to Pro to unlock Live Trading and premium features! Use promo code <strong>FreeTrial101</strong> on the pricing page for a 7-day free trial.
+            Upgrade to Pro to unlock Live Trading and premium features! Check out the pricing page for options.
           </p>
         </div>
       ),

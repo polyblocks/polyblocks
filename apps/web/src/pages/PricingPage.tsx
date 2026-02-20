@@ -124,11 +124,14 @@ export default function PricingPage() {
   // MetaMask state
   const [mmBusy, setMmBusy] = useState(false);
   const [mmStatus, setMmStatus] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"metamask" | "manual" | "promo">(
-    "metamask",
-  );
-  
-  const [promoCode, setPromoCode] = useState("");
+  const [promoCode, setPromoCode] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("promo") || "";
+  });
+  const [paymentMethod, setPaymentMethod] = useState<"metamask" | "manual" | "promo">(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("promo") ? "promo" : "metamask";
+  });
   const [promoStatus, setPromoStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [promoBusy, setPromoBusy] = useState(false);
 

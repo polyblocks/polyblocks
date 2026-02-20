@@ -530,13 +530,13 @@ export default function LandingPage() {
             </ul>
             <button className="pricing-btn pro" onClick={() => {
               if (isLoggedIn()) {
-                navigate("/pricing");
+                navigate("/pricing?promo=FreeTrial101");
               } else {
                 login();
               }
             }}>
               <Crown size={14} />
-              Upgrade to Pro — <span className="pb-price-old">7 USDC</span> <span className="pb-price-new">5 USDC</span>/mo
+              Start 7-Day Free Trial
             </button>
             <p className="pricing-guarantee">30-day money-back guarantee</p>
           </div>
