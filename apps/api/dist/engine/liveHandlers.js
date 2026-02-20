@@ -13,7 +13,19 @@ import { createPaperHandlers } from "./paperHandlers.js";
 import { builderConfig } from "../builderConfig.js";
 const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
 const CHAIN_ID = 137;
+// ── In-Memory ClobClient Cache ──────────────────────────────────────────────
+// Re-initializing ethers.Wallet from private keys and fetching DB credentials
+// on every block execution adds 30-50ms latency. We cache the client per user
+// for 5 minutes to significantly optimize execution speed for live trades.
+const clobClientCache = new Map();
+const CLIENT_CACHE_TTL_MS = 5 * 60_000;
 async function createClobClientAsync(userId) {
+    const cacheKey = userId || "anonymous";
+    const cached = clobClientCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && now < cached.expiresAt) {
+        return cached.client;
+    }
     const creds = await getCredentials(userId);
     if (!creds.isConfigured) {
         throw new Error("No trading credentials configured. Go to Settings to set up your wallet.");
@@ -37,19 +49,13 @@ async function createClobClientAsync(userId) {
         console.log(`[LIVE] ⚠️  funder === signer but signatureType was 1 (POLY_PROXY) — auto-correcting to 0 (EOA)`);
         signatureType = 0;
     }
-    // Debug: log credential details for troubleshooting (redacted secrets)
-    console.log(`[LIVE] ClobClient config:`);
-    console.log(`  host:          ${CLOB_HOST}`);
-    console.log(`  signerAddress: ${signerAddr}`);
-    console.log(`  funderAddress: ${funderAddr}`);
-    console.log(`  signatureType: ${signatureType}${signatureType !== creds.signatureType ? ` (corrected from ${creds.signatureType})` : ""}`);
-    console.log(`  apiKey:        ${creds.apiKey.slice(0, 8)}…${creds.apiKey.slice(-4)}`);
-    console.log(`  builderConfig: ${builderConfig ? "yes" : "no"}`);
-    return new ClobClient(CLOB_HOST, CHAIN_ID, signer, {
+    const newClient = new ClobClient(CLOB_HOST, CHAIN_ID, signer, {
         key: creds.apiKey,
         secret: creds.apiSecret,
         passphrase: creds.passphrase,
     }, signatureType, funderAddr, undefined, false, builderConfig);
+    clobClientCache.set(cacheKey, { client: newClient, expiresAt: now + CLIENT_CACHE_TTL_MS });
+    return newClient;
 }
 // ── Live market order placement ──────────────────────────────────────────────
 // Uses createAndPostMarketOrder — a TRUE market order that automatically

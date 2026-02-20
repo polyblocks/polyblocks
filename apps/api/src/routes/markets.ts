@@ -8,6 +8,13 @@ import type { FastifyInstance } from "fastify";
 const GAMMA_HOST = process.env.POLYMARKET_GAMMA_HOST || "https://gamma-api.polymarket.com";
 const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
 
+// ── In-Memory Cache for Market Search ──────────────────────────────────────
+// Reduces latency and prevents DNS EAI_AGAIN errors when users have multiple
+// Market Picker nodes polling the API concurrently.
+let cachedMarkets: Record<string, unknown>[] | null = null;
+let marketsCacheTime = 0;
+const CACHE_TTL_MS = 15_000; // 15 seconds
+
 /** Gamma returns some fields as JSON strings — safely parse them */
 function safeJsonParse<T>(value: unknown, fallback: T): T {
   if (typeof value === "string") {
@@ -69,12 +76,26 @@ export async function registerMarketRoutes(app: FastifyInstance) {
       params.append("end_date_min", query.end_date_min);
     }
     
-    const res = await fetch(`${GAMMA_HOST}/markets?${params}`);
-    if (!res.ok) {
-      return { error: "Failed to fetch markets", status: res.status };
-    }
+    let markets: Record<string, unknown>[] = [];
+    const now = Date.now();
+    const isStandardQuery = !query.q && (query.limit === "500" || query.limit === "20") && query.order === "endDate" && query.ascending === "true";
 
-    const markets = await res.json() as Array<Record<string, unknown>>;
+    // Serve from cache if standard polling query
+    if (isStandardQuery && cachedMarkets && now - marketsCacheTime < CACHE_TTL_MS) {
+      markets = cachedMarkets;
+    } else {
+      const res = await fetch(`${GAMMA_HOST}/markets?${params}`);
+      if (!res.ok) {
+        return { error: "Failed to fetch markets", status: res.status };
+      }
+      markets = await res.json() as Array<Record<string, unknown>>;
+      
+      // Update cache
+      if (isStandardQuery) {
+        cachedMarkets = markets;
+        marketsCacheTime = now;
+      }
+    }
 
     // Map to a clean shape using shared helper
     const mapped = markets.map(mapMarket);
