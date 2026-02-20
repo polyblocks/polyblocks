@@ -42,7 +42,7 @@ async function main() {
         credentials: true,
     });
     await app.register(fastifyRateLimit, {
-        max: 100, // global limit
+        max: 1000, // global limit
         timeWindow: '1 minute'
     });
     // ── Connect to MongoDB ──────────────────────────────────────────────────

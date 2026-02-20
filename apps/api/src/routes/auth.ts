@@ -554,9 +554,18 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       return reply.code(400).send({ ok: false, message: "You have already used a free trial." });
     }
 
+    // Prevent multi-accounting from the same IP
+    const ip = req.ip;
+    if (ip) {
+      const existingIpUser = await usersCol().findOne({ promoRedeemedIp: ip });
+      if (existingIpUser && existingIpUser._id !== userId) {
+        return reply.code(400).send({ ok: false, message: "A free trial has already been claimed from this device/IP." });
+      }
+    }
+
     const now = new Date();
     const expires = new Date(now);
-    expires.setDate(expires.getDate() + 7);
+    expires.setDate(expires.getDate() + 7); // Exactly 7 days
 
     await usersCol().updateOne(
       { _id: userId },
@@ -566,6 +575,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           subscribedAt: now.toISOString(),
           expiresAt: expires.toISOString(),
           hasUsedTrial: true,
+          promoRedeemedIp: ip, // Save IP to prevent reuse
         },
       }
     );
