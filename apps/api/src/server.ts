@@ -49,7 +49,7 @@ async function main() {
   });
 
   await app.register(fastifyRateLimit, {
-    max: 100, // global limit
+    max: 1000, // global limit
     timeWindow: '1 minute'
   });
 

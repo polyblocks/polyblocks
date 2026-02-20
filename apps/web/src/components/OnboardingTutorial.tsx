@@ -7,11 +7,14 @@ export default function OnboardingTutorial() {
   const [run, setRun] = useState(false);
 
   useEffect(() => {
-    // Only run for free users who haven't completed it yet (localStorage check)
+    // Only run for free users who haven't completed it yet and only on the dashboard or editor pages
     if (user && user.tier === "free") {
-      const hasSeen = localStorage.getItem("polyblocks_tutorial_seen");
-      if (!hasSeen) {
-        setRun(true);
+      const isCorrectPage = window.location.pathname.includes("/dashboard") || window.location.pathname.includes("/editor");
+      if (isCorrectPage) {
+        const hasSeen = localStorage.getItem("polyblocks_tutorial_seen");
+        if (!hasSeen) {
+          setRun(true);
+        }
       }
     }
   }, [user]);
@@ -26,13 +29,13 @@ export default function OnboardingTutorial() {
     }
   };
 
-  const steps: Step[] = [
+    const steps: Step[] = [
     {
       target: "body",
       placement: "center",
       content: (
         <div>
-          <h2 style={{ marginBottom: "10px", fontSize: "18px" }}>Welcome to Polyblocks! 🚀</h2>
+          <h2 style={{ marginBottom: "10px", fontSize: "18px" }}>Welcome to Polyblocks!</h2>
           <p style={{ fontSize: "14px", lineHeight: "1.5" }}>
             This is the ultimate no-code strategy builder for Polymarket. Let's take a quick tour to help you build your first trading bot.
           </p>
