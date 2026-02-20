@@ -42,6 +42,70 @@ async function sendTelegram(token: string, chatId: string, text: string) {
 
 // ─── Utility ────────────────────────────────────────────────────────────────
 
+const ET_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "numeric",
+  minute: "numeric",
+  second: "numeric",
+  hour12: false,
+});
+
+function getEtToday(): { month: number; day: number; year: number } {
+  const parts = ET_FORMATTER.formatToParts(new Date());
+  const partMap = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return {
+    year: parseInt(partMap.year, 10),
+    month: parseInt(partMap.month, 10),
+    day: parseInt(partMap.day, 10),
+  };
+}
+
+/** Extract event date from market question text */
+function extractEventDate(question: string): { month: number; day: number } | null {
+  const monthNames: Record<string, number> = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+    jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  };
+  
+  const lower = question.toLowerCase();
+  
+  // Match "February 20" or "Feb 20"
+  for (const [name, num] of Object.entries(monthNames)) {
+    const regex = new RegExp(`\\b${name}\\s+(\\d{1,2})\\b`, 'i');
+    const match = lower.match(regex);
+    if (match) {
+      return { month: num, day: parseInt(match[1], 10) };
+    }
+  }
+  
+  return null;
+}
+
+/** Check if market event date matches today in ET */
+function isMarketToday(question: string): boolean {
+  const eventDate = extractEventDate(question);
+  if (!eventDate) return true; // If can't parse, include it
+  
+  const today = getEtToday();
+  return eventDate.month === today.month && eventDate.day === today.day;
+}
+
+/** Format ET time as ISO string for display */
+function formatEtTime(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+/** Parse ISO date to milliseconds (UTC) */
+function parseIsoMs(iso: string): number | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 async function fetchJson(url: string): Promise<unknown> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`API error ${res.status}: ${url}`);
@@ -60,7 +124,20 @@ function safeJsonParse<T>(value: unknown, fallback: T): T {
   return fallback;
 }
 
-function matchesTimeframe(text: string, timeframe: string): boolean {
+function matchesTimeframe(text: string, timeframe: string, startIso?: string, endIso?: string): boolean {
+  if (startIso && endIso) {
+    const startMs = Date.parse(startIso);
+    const endMs = Date.parse(endIso);
+    if (Number.isFinite(startMs) && Number.isFinite(endMs)) {
+      const diffMin = (endMs - startMs) / 60000;
+      if (timeframe === "1h" && diffMin >= 55 && diffMin <= 65) return true;
+      if (timeframe === "15m" && diffMin >= 13 && diffMin <= 17) return true;
+      if (timeframe === "5m" && diffMin >= 3 && diffMin <= 7) return true;
+      if (timeframe === "1m" && diffMin >= 0 && diffMin <= 2) return true;
+      return false; // If we have reliable dates, rely on them
+    }
+  }
+
   const lower = text.toLowerCase();
   const m = lower.match(/(\d{1,2}):(\d{2})\s*(am|pm)\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)/);
   if (m) {
@@ -102,10 +179,7 @@ const CRYPTO_ALIASES: Record<string, string[]> = {
   BTC: ["BTC", "Bitcoin"],
   ETH: ["ETH", "Ethereum"],
   SOL: ["SOL", "Solana"],
-  DOGE: ["DOGE", "Dogecoin"],
   XRP: ["XRP", "Ripple"],
-  AVAX: ["AVAX", "Avalanche"],
-  TRUMP: ["TRUMP", "Donald Trump"],
 };
 
 function getCryptoTokens(symbol: string): string[] {
@@ -223,26 +297,46 @@ const recentCryptoMarketHandler: NodeHandler = {
     if (inputs.trigger === false) return { market: null };
     const cryptoSymbol = String(node.config.cryptoSymbol || "BTC");
     const timeframe = String(node.config.timeframe || "5m");
-    const searchQuery = String(node.config.searchQuery || "");
     const tokens = getCryptoTokens(cryptoSymbol);
-    const query = searchQuery.trim();
+
+    const t0 = Date.now();
+    const nowUtcMs = Date.now();
+    const etToday = getEtToday();
+    
+    ctx.log(node.id, `ET today: ${etToday.year}-${String(etToday.month).padStart(2,'0')}-${String(etToday.day).padStart(2,'0')} | Server UTC: ${new Date().toISOString()}`);
 
     const params = new URLSearchParams({
-      limit: "100",
+      limit: "500",
       offset: "0",
       active: "true",
       closed: "false",
-      order: "startDate",
-      ascending: "false",
+      order: "endDate",
+      ascending: "true",
+      end_date_min: new Date(nowUtcMs).toISOString(),
     });
 
-    const t0 = Date.now();
     const res = await fetch(`${GAMMA_HOST}/markets?${params}`);
     if (!res.ok) {
       throw new Error(`Gamma API error ${res.status}`);
     }
 
     const raw = (await res.json()) as Array<Record<string, unknown>>;
+    
+    // Debug: show what dates we're finding
+    ctx.log(node.id, `Gamma returned ${raw.length} total markets`);
+    
+    // Log first 5 BTC markets and their extracted dates
+    const btcMarkets = raw.filter((m) => {
+      const hay = `${m.question || ""} ${m.slug || ""}`.toLowerCase();
+      return hay.includes("bitcoin") || hay.includes("btc");
+    }).slice(0, 5);
+    btcMarkets.forEach((m, i) => {
+      const q = String(m.question || "");
+      const extracted = extractEventDate(q);
+      const isToday = extracted ? (extracted.month === etToday.month && extracted.day === etToday.day) : "no-date";
+      ctx.log(node.id, `  BTC #${i+1}: "${q.slice(0, 45)}..." | extracted: ${extracted?.month}/${extracted?.day} | isToday: ${isToday}`);
+    });
+    
     const filtered = raw
       .map((m) => ({
         conditionId: String(m.conditionId || m.condition_id || ""),
@@ -253,7 +347,7 @@ const recentCryptoMarketHandler: NodeHandler = {
         outcomes: safeJsonParse(m.outcomes as string, [] as string[]),
         outcomePrices: safeJsonParse(m.outcomePrices as string, [] as string[]),
         clobTokenIds: safeJsonParse(m.clobTokenIds as string, [] as string[]),
-        startDate: String(m.startDate || ""),
+        startDate: String(m.eventStartTime || m.startDate || ""),
         endDate: String(m.endDate || ""),
         active: parseBool(m.active),
         closed: parseBool(m.closed),
@@ -261,38 +355,88 @@ const recentCryptoMarketHandler: NodeHandler = {
       .filter((m) => {
         if (!m.active || m.closed) return false;
         const hay = `${m.question} ${m.slug}`.toLowerCase();
-        if (query && !hay.includes(query.toLowerCase())) {
-          return false;
-        }
         if (tokens.length > 0 && !tokens.some((t) => hay.includes(t.toLowerCase()))) {
           return false;
         }
-        return matchesTimeframe(hay, timeframe);
-      })
-      .sort((a, b) => {
-        const aTime = Date.parse(a.startDate || a.endDate || "") || 0;
-        const bTime = Date.parse(b.startDate || b.endDate || "") || 0;
-        return bTime - aTime;
+        if (!matchesTimeframe(hay, timeframe, m.startDate, m.endDate)) return false;
+        return true;
       });
+    
+    ctx.log(node.id, `After symbol/timeframe filter: ${filtered.length} markets`);
+    
+    // Filter to only today's markets
+    const todayMarkets = filtered.filter((m) => isMarketToday(m.question));
+    ctx.log(node.id, `Today's markets (${etToday.month}/${etToday.day}): ${todayMarkets.length}`);
+    
+    // Use today's markets if available, otherwise fall back to all filtered
+    const finalMarkets = todayMarkets.length > 0 ? todayMarkets : filtered;
+    if (todayMarkets.length === 0) {
+      ctx.log(node.id, `No markets for today, using all ${filtered.length} filtered markets`);
+    }
 
-    const nowMs = Date.now();
-    const parseMs = (iso: string) => {
-      const ms = Date.parse(iso);
-      return Number.isFinite(ms) ? ms : null;
-    };
-    const activePeriod = filtered.find((m) => {
-      const startMs = m.startDate ? parseMs(m.startDate) : null;
-      const endMs = m.endDate ? parseMs(m.endDate) : null;
-      if (startMs === null && endMs === null) return false;
+    // Categorize by current UTC time
+    const currentlyActive: typeof finalMarkets = [];
+    const upcoming: typeof finalMarkets = [];
+    const recentlyEnded: typeof finalMarkets = [];
+
+    for (const m of finalMarkets) {
+      const startMs = m.startDate ? parseIsoMs(m.startDate) : null;
+      const endMs = m.endDate ? parseIsoMs(m.endDate) : null;
+      
+      if (startMs === null && endMs === null) continue;
+      
       const start = startMs ?? -Infinity;
       const end = endMs ?? Infinity;
-      return start <= nowMs && nowMs < end;
-    }) || filtered[0];
+      
+      if (start <= nowUtcMs && nowUtcMs < end) {
+        currentlyActive.push(m);
+      } else if (start > nowUtcMs) {
+        upcoming.push(m);
+      } else if (end <= nowUtcMs) {
+        recentlyEnded.push(m);
+      }
+    }
+
+    // Sort currentlyActive by endDate ascending (ending soonest first)
+    currentlyActive.sort((a, b) => {
+      const aEnd = a.endDate ? parseIsoMs(a.endDate) ?? Infinity : Infinity;
+      const bEnd = b.endDate ? parseIsoMs(b.endDate) ?? Infinity : Infinity;
+      return aEnd - bEnd;
+    });
+
+    // Sort upcoming by startDate ascending (next to start first)
+    upcoming.sort((a, b) => {
+      const aStart = a.startDate ? parseIsoMs(a.startDate) ?? Infinity : Infinity;
+      const bStart = b.startDate ? parseIsoMs(b.startDate) ?? Infinity : Infinity;
+      return aStart - bStart;
+    });
+
+    // Sort recentlyEnded by endDate descending (most recently ended first)
+    recentlyEnded.sort((a, b) => {
+      const aEnd = a.endDate ? parseIsoMs(a.endDate) ?? 0 : 0;
+      const bEnd = b.endDate ? parseIsoMs(b.endDate) ?? 0 : 0;
+      return bEnd - aEnd;
+    });
+
+    const activePeriod = currentlyActive[0] || upcoming[0] || recentlyEnded[0];
+
+    ctx.log(node.id, `Today's markets: ${currentlyActive.length} active, ${upcoming.length} upcoming, ${recentlyEnded.length} ended`);
+    
+    if (currentlyActive.length > 0) {
+      currentlyActive.slice(0, 3).forEach((m, i) => {
+        const end = parseIsoMs(m.endDate || "");
+        const relEnd = end ? Math.round((end - nowUtcMs) / 60000) : '?';
+        ctx.log(node.id, `  #${i+1}: "${m.question.slice(0, 50)}..." | ends in ${relEnd}min`);
+      });
+    }
 
     if (!activePeriod?.conditionId) {
-      ctx.log(node.id, "No matching live crypto market found");
+      ctx.log(node.id, "No matching live crypto market found for today");
       return { market: null };
     }
+
+    const marketType = currentlyActive[0] ? "ACTIVE" : upcoming[0] ? "UPCOMING" : "ENDED";
+    ctx.log(node.id, `Selected ${marketType}: ${activePeriod.question.slice(0, 60)}...`);
 
     let market: Record<string, unknown> = {
       conditionId: activePeriod.conditionId,
@@ -314,6 +458,23 @@ const recentCryptoMarketHandler: NodeHandler = {
         if (tokensFromMarket && Array.isArray(tokensFromMarket)) {
           market.clobTokenIds = tokensFromMarket.map((t) => t.token_id);
         }
+      }
+    }
+
+    if (Array.isArray(market.clobTokenIds) && market.clobTokenIds.length > 0) {
+      try {
+        const livePrices = await Promise.all(
+          (market.clobTokenIds as string[]).slice(0, 2).map(async (tokenId) => {
+            const midData = await fetchJson(`${CLOB_HOST}/midpoint?token_id=${tokenId}`) as { mid: string };
+            return midData?.mid ?? null;
+          })
+        );
+        const validPrices = livePrices.filter((p): p is string => p !== null);
+        if (validPrices.length > 0) {
+          market.outcomePrices = validPrices;
+        }
+      } catch {
+        // Keep Gamma prices if CLOB fetch fails
       }
     }
 

@@ -284,6 +284,7 @@ export interface UserProfile {
   /** Whether live trading is enabled */
   liveEnabled: boolean;
   createdAt: string;
+  verified?: boolean;
 }
 
 // ─── Templates ──────────────────────────────────────────────────────────────

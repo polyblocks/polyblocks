@@ -7,7 +7,85 @@
 
 import type { FastifyInstance } from "fastify";
 import bcrypt from "bcryptjs";
+import nodemailer from "nodemailer";
 import { usersCol, sessionsCol, type DbUser } from "../db.js";
+
+const NOTIFY_EMAIL = "gaming.oars@gmail.com";
+
+// ─── Email Transporter (lazy singleton) ─────────────────────────────────────
+let _transporter: nodemailer.Transporter | null = null;
+function getMailTransporter(): nodemailer.Transporter | null {
+  if (_transporter) return _transporter;
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  if (!host || !user || !pass) return null;
+  _transporter = nodemailer.createTransport({
+    host, port, secure: port === 465,
+    auth: { user, pass },
+  });
+  return _transporter;
+}
+
+async function sendVerificationCode(email: string, code: string): Promise<void> {
+  const transporter = getMailTransporter();
+  if (!transporter) return;
+  try {
+    await transporter.sendMail({
+      from: `"Polyblocks" <contact@poly-blocks.com>`,
+      to: email,
+      subject: "Your Polyblocks Verification Code",
+      text: `Your verification code is: ${code}\n\nIt expires in 10 minutes.`,
+      html: `<p>Your verification code is: <strong>${code}</strong></p><p>It expires in 10 minutes.</p>`,
+    });
+  } catch (err) {
+    console.error("Failed to send verification email:", err);
+  }
+}
+
+function generateVerificationCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function getVerificationExpiry(): Date {
+  const expires = new Date();
+  expires.setMinutes(expires.getMinutes() + 10);
+  return expires;
+}
+
+async function sendSubscriptionNotification(data: {
+  userEmail: string;
+  userId: string;
+  txHash: string;
+  walletAddress?: string;
+}): Promise<void> {
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    console.log(`[Email] SMTP not configured, skipping notification for ${data.userEmail}`);
+    return;
+  }
+  
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_USER,
+      to: NOTIFY_EMAIL,
+      subject: `🎉 New Pro Subscription - ${data.userEmail}`,
+      text: `New Pro subscription activated!
+
+User: ${data.userEmail}
+User ID: ${data.userId}
+Transaction: ${data.txHash}
+${data.walletAddress ? `Wallet: ${data.walletAddress}` : ""}
+Time: ${new Date().toISOString()}
+
+— Polyblocks`,
+    });
+    console.log(`[Email] Subscription notification sent to ${NOTIFY_EMAIL}`);
+  } catch (err) {
+    console.error(`[Email] Failed to send notification:`, err);
+  }
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,6 +134,7 @@ function publicUser(u: DbUser) {
     tier: u.tier,
     subscribedAt: u.subscribedAt,
     expiresAt: u.expiresAt,
+    verified: u.verified,
   };
 }
 
@@ -201,6 +280,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           user = { ...byEmail, googleId: googleUser.sub, avatar: googleUser.picture, name: googleUser.name };
         } else {
           const userId = generateId();
+          const vCode = generateVerificationCode();
           const newUser: DbUser = {
             _id: userId,
             email: googleUser.email,
@@ -212,8 +292,12 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             googleId: googleUser.sub,
             passwordHash: "",
             createdAt: new Date().toISOString(),
+            verified: false,
+            verificationCode: vCode,
+            verificationCodeExpiresAt: getVerificationExpiry(),
           };
           await usersCol().insertOne(newUser);
+          sendVerificationCode(googleUser.email, vCode).catch(() => {});
           user = newUser;
         }
       } else {
@@ -262,6 +346,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
     const userId = generateId();
     const passwordHash = await bcrypt.hash(password, 12);
+    const vCode = generateVerificationCode();
 
     const newUser: DbUser = {
       _id: userId,
@@ -274,16 +359,83 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       googleId: "",
       passwordHash,
       createdAt: new Date().toISOString(),
+      verified: false,
+      verificationCode: vCode,
+      verificationCodeExpiresAt: getVerificationExpiry(),
     };
 
     await usersCol().insertOne(newUser);
     const token = await createSession(userId);
+    
+    sendVerificationCode(email, vCode).catch(() => {});
 
     return {
       user: publicUser(newUser),
       token,
     };
   });
+
+  app.post("/verify-code", async (req, reply) => {
+    const { code } = req.body as { code: string };
+    const token = (req.headers["x-session-token"] as string) || "";
+    
+    if (!token || !code) {
+      return reply.code(400).send({ error: "Missing token or code" });
+    }
+
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
+
+    const user = await usersCol().findOne({ _id: userId });
+    if (!user) return reply.code(404).send({ error: "User not found" });
+
+    if (user.verified) {
+      return { ok: true, user: publicUser(user) };
+    }
+
+    if (!user.verificationCode || user.verificationCode !== code.trim()) {
+      return reply.code(400).send({ error: "Invalid verification code" });
+    }
+
+    if (user.verificationCodeExpiresAt && new Date(user.verificationCodeExpiresAt) < new Date()) {
+      return reply.code(400).send({ error: "Verification code has expired. Please request a new one." });
+    }
+
+    await usersCol().updateOne(
+      { _id: user._id },
+      { $set: { verified: true }, $unset: { verificationCode: "", verificationCodeExpiresAt: "" } }
+    );
+
+    const updatedUser = { ...user, verified: true };
+    return { ok: true, user: publicUser(updatedUser) };
+  });
+
+  app.post("/resend-code", async (req, reply) => {
+      const token = (req.headers["x-session-token"] as string) || "";
+      if (!token) return reply.code(401).send({ error: "Not authenticated" });
+
+      const userId = await resolveSession(token);
+      if (!userId) return reply.code(401).send({ error: "Invalid session" });
+
+      const user = await usersCol().findOne({ _id: userId });
+      if (!user) return reply.code(404).send({ error: "User not found" });
+
+      if (user.verified) {
+        return reply.code(400).send({ error: "User is already verified" });
+      }
+
+      const vCode = generateVerificationCode();
+      const expires = getVerificationExpiry();
+
+      await usersCol().updateOne(
+        { _id: user._id },
+        { $set: { verificationCode: vCode, verificationCodeExpiresAt: expires } }
+      );
+
+      sendVerificationCode(user.email, vCode).catch(() => {});
+      return { ok: true, message: "Verification code sent" };
+    }
+  );
 
   /**
    * POST /api/auth/login
@@ -372,6 +524,60 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   // ── Payment & Tier ────────────────────────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
 
+  app.post(
+    "/redeem-promo",
+    {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: '1 hour'
+        }
+      }
+    },
+    async (req, reply) => {
+    const { userId, code } = req.body as { userId: string; code: string };
+    
+    if (!userId || !code) {
+      return reply.code(400).send({ ok: false, message: "Missing userId or code." });
+    }
+
+    const user = await usersCol().findOne({ _id: userId });
+    if (!user) {
+      return reply.code(404).send({ ok: false, message: "User not found." });
+    }
+
+    if (code.trim().toUpperCase() !== "FREETRIAL101") {
+      return reply.code(400).send({ ok: false, message: "Invalid or expired promo code." });
+    }
+
+    if (user.hasUsedTrial) {
+      return reply.code(400).send({ ok: false, message: "You have already used a free trial." });
+    }
+
+    const now = new Date();
+    const expires = new Date(now);
+    expires.setDate(expires.getDate() + 7);
+
+    await usersCol().updateOne(
+      { _id: userId },
+      {
+        $set: {
+          tier: "pro",
+          subscribedAt: now.toISOString(),
+          expiresAt: expires.toISOString(),
+          hasUsedTrial: true,
+        },
+      }
+    );
+
+    app.log.info(`User ${user.email} claimed 7-day Pro trial (FreeTrial101)`);
+
+    return {
+      ok: true,
+      message: "Success! 7-day Pro trial activated.",
+    };
+  });
+
   /**
    * POST /api/auth/verify-payment
    * Accepts { userId, txHash, walletAddress? } and activates Pro for 30 days.
@@ -411,6 +617,14 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     app.log.info(
       `User ${user.email} upgraded to Pro (tx: ${txHash}${walletAddress ? `, wallet: ${walletAddress}` : ""})`,
     );
+
+    // Send notification email
+    sendSubscriptionNotification({
+      userEmail: user.email,
+      userId,
+      txHash,
+      walletAddress,
+    }).catch(() => { });
 
     return {
       ok: true,

@@ -1,0 +1,114 @@
+
+/* ─── Landing Background Animation ────────────────────────────── */
+
+.landing-bg-animation {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--pb-bg-primary); /* Base dark background */
+}
+
+/* Ensure the landing wrapper content sits above the absolute background */
+.landing > *:not(.landing-bg-animation) {
+  position: relative;
+  z-index: 1;
+}
+
+.glow-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  animation: float-orb 20s infinite alternate;
+}
+
+.orb-1 {
+  top: -10%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  background: rgba(99, 102, 241, 0.4); /* Accent */
+  animation-duration: 25s;
+}
+
+.orb-2 {
+  top: 40%;
+  right: -20%;
+  width: 40vw;
+  height: 40vw;
+  background: rgba(139, 92, 246, 0.3); /* Purple */
+  animation-duration: 30s;
+  animation-direction: alternate-reverse;
+}
+
+.orb-3 {
+  bottom: -20%;
+  left: 20%;
+  width: 60vw;
+  height: 60vw;
+  background: rgba(6, 182, 212, 0.3); /* Cyan */
+  animation-duration: 22s;
+}
+
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  mask-image: radial-gradient(circle at center, black 10%, transparent 80%);
+  -webkit-mask-image: radial-gradient(circle at center, black 10%, transparent 80%);
+  z-index: 1;
+}
+
+@keyframes float-orb {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(5%, 10%) scale(1.1);
+  }
+  66% {
+    transform: translate(-5%, 5%) scale(0.9);
+  }
+  100% {
+    transform: translate(10%, -5%) scale(1.05);
+  }
+}
+
+/* ─── Hero Live Badge ─────────────────────────────────────────────────── */
+
+.landing-hero-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto 32px auto;
+  padding: 8px 16px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--pb-radius-full);
+  color: var(--pb-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  animation: glow-pulse 3s infinite alternate;
+}
+
+.landing-hero-live-badge strong {
+  color: var(--pb-text-primary);
+  font-weight: 700;
+}
+
+@keyframes glow-pulse {
+  from {
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0);
+  }
+  to {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
+  }
+}

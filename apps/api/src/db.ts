@@ -23,6 +23,10 @@ export interface DbUser {
   googleId: string;                    // empty string for email-only users
   passwordHash: string;                // empty string for Google-only users
   createdAt: string;
+  verified?: boolean;
+  verificationCode?: string;
+  verificationCodeExpiresAt?: Date;
+  hasUsedTrial?: boolean;
 }
 
 export interface DbSession {

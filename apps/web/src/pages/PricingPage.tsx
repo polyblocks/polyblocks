@@ -22,7 +22,7 @@ import {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const PAYMENT_WALLET = "0x06f344E8805Ce78e62699b46e3d8BC78a6c1a35f";
-const PAYMENT_AMOUNT = "1"; // $1 USDC
+const PAYMENT_AMOUNT = "5"; // $5 USDC
 const CHAIN = "Polygon";
 const CHAIN_ID_HEX = "0x89"; // 137 in hex (Polygon mainnet)
 const CHAIN_ID_DEC = 137;
@@ -124,9 +124,13 @@ export default function PricingPage() {
   // MetaMask state
   const [mmBusy, setMmBusy] = useState(false);
   const [mmStatus, setMmStatus] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"metamask" | "manual">(
+  const [paymentMethod, setPaymentMethod] = useState<"metamask" | "manual" | "promo">(
     "metamask",
   );
+  
+  const [promoCode, setPromoCode] = useState("");
+  const [promoStatus, setPromoStatus] = useState<{ ok: boolean; message: string } | null>(null);
+  const [promoBusy, setPromoBusy] = useState(false);
 
   // ── EIP-6963 wallet detection ───────────────────────────────────────────
   const [walletProviders, setWalletProviders] = useState<EIP6963ProviderDetail[]>([]);
@@ -292,6 +296,29 @@ export default function PricingPage() {
     }
   };
 
+  const handlePromoSubmit = async () => {
+    if (!promoCode.trim()) return;
+    setPromoBusy(true);
+    setPromoStatus(null);
+    try {
+      const res = await fetch("/api/auth/redeem-promo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user?.id, code: promoCode.trim() }),
+      });
+      const data = await res.json();
+      setPromoStatus(data);
+      if (data.ok) {
+        await refreshUser();
+        setTimeout(() => navigate("/dashboard"), 2000);
+      }
+    } catch {
+      setPromoStatus({ ok: false, message: "Network error. Please try again." });
+    } finally {
+      setPromoBusy(false);
+    }
+  };
+
   // ── Already Pro ─────────────────────────────────────────────────────────
   if (isPro()) {
     return (
@@ -386,6 +413,13 @@ export default function PricingPage() {
             >
               <Copy size={14} />
               Manual Transfer
+            </button>
+            <button
+              className={`pricing-method-tab ${paymentMethod === "promo" ? "active" : ""}`}
+              onClick={() => setPaymentMethod("promo")}
+            >
+              <Zap size={14} />
+              Promo Code
             </button>
           </div>
 
@@ -549,6 +583,47 @@ export default function PricingPage() {
                     className={`pricing-result ${submitResult.ok ? "success" : "error"}`}
                   >
                     {submitResult.message}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ─── Promo code ────────────────────────────────────────── */}
+          {paymentMethod === "promo" && (
+            <div className="pricing-payment">
+              <h3>Redeem Promo Code</h3>
+              <p className="pricing-payment-note">
+                Got a promo code? Enter it below to unlock your Pro trial or access.
+              </p>
+              
+              <div className="pricing-verify" style={{ marginTop: 24 }}>
+                <div className="pricing-tx-input">
+                  <input
+                    type="text"
+                    placeholder="e.g. FreeTrial101"
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value)}
+                    style={{ textTransform: "uppercase" }}
+                  />
+                  <button
+                    onClick={handlePromoSubmit}
+                    disabled={promoBusy || !promoCode.trim()}
+                  >
+                    {promoBusy ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <CheckCircle size={14} />
+                    )}
+                    {promoBusy ? "Redeeming…" : "Redeem"}
+                  </button>
+                </div>
+
+                {promoStatus && (
+                  <div
+                    className={`pricing-result ${promoStatus.ok ? "success" : "error"}`}
+                  >
+                    {promoStatus.message}
                   </div>
                 )}
               </div>

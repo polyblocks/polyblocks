@@ -20,6 +20,7 @@ export interface User {
   tier: UserTier;
   subscribedAt: string | null;
   expiresAt: string | null;
+  verified?: boolean;
 }
 
 interface AuthState {

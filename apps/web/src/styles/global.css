@@ -3249,6 +3249,15 @@ body {
   font-weight: 800;
 }
 
+.pricing-btn .pb-price-new {
+  color: inherit;
+}
+
+.pricing-btn .pb-price-old {
+  color: inherit;
+  opacity: 0.7;
+}
+
 .price-period {
   font-size: 14px;
   color: var(--pb-text-muted);

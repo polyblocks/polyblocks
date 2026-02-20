@@ -2,37 +2,11 @@
  * LandingPage — high-converting marketing page with hero, features, social proof, pricing, and auth.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
-import {
-  Blocks,
-  Zap,
-  Shield,
-  TrendingUp,
-  BarChart3,
-  GitBranch,
-  CheckCircle,
-  ArrowRight,
-  Crown,
-  Star,
-  Layers,
-  Play,
-  Lock,
-  Mail,
-  Loader2,
-  Users,
-  Globe,
-  Bot,
-  Sparkles,
-  Target,
-  Workflow,
-  BadgeCheck,
-  MessageCircle,
-  Clock,
-  Headphones,
-  Send,
-} from "lucide-react";
+import { Blocks, Zap, Shield, TrendingUp, BarChart3, GitBranch, CheckCircle, ArrowRight, Crown, Star, Layers, Play, Lock, Mail, Loader2, Users, Globe, Bot, Sparkles, Target, Workflow, BadgeCheck, MessageCircle, Clock, Headphones, Send } from "lucide-react";
+import "../styles/landing-animations.css";
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -53,6 +27,36 @@ export default function LandingPage() {
   const [contactSent, setContactSent] = useState(false);
   const [contactLoading, setContactLoading] = useState(false);
   const [contactError, setContactError] = useState<string | null>(null);
+
+  // Scroll effect state
+  const [scrollY, setScrollY] = useState(0);
+  const [scrollDirection, setScrollDirection] = useState<"up" | "down">("up");
+
+  useEffect(() => {
+    let lastScrollY = window.pageYOffset;
+    let ticking = false;
+
+    const updateScroll = () => {
+      const currentScrollY = window.pageYOffset;
+      setScrollY(currentScrollY);
+
+      if (Math.abs(currentScrollY - lastScrollY) > 5) {
+        setScrollDirection(currentScrollY > lastScrollY ? "down" : "up");
+        lastScrollY = currentScrollY > 0 ? currentScrollY : 0;
+      }
+      ticking = false;
+    };
+
+    const onScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(updateScroll);
+        ticking = true;
+      }
+    };
+
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const handleStart = () => {
     if (isLoggedIn()) {
@@ -85,8 +89,25 @@ export default function LandingPage() {
 
   return (
     <div className="landing">
+      {/* ── Background Animation ───────────────────────────────────────── */}
+      <div className="landing-bg-animation">
+        <div className="glow-orb orb-1" />
+        <div className="glow-orb orb-2" />
+        <div className="glow-orb orb-3" />
+        <div className="grid-overlay" />
+      </div>
+
       {/* ── Navbar ────────────────────────────────────────────────────── */}
-      <nav className="landing-nav">
+      <nav 
+        className="landing-nav"
+        style={{
+          transform: scrollY > 50 && scrollDirection === "down" ? "translateY(-100%)" : "translateY(0)",
+          transition: "transform 0.3s ease-in-out, background 0.3s ease",
+          background: scrollY > 20 ? "rgba(10, 10, 10, 0.8)" : "transparent",
+          backdropFilter: scrollY > 20 ? "blur(12px)" : "none",
+          WebkitBackdropFilter: scrollY > 20 ? "blur(12px)" : "none",
+        }}
+      >
         <div className="landing-nav-brand">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
             <polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5" fill="none" stroke="white" strokeWidth="2" strokeLinejoin="round" />
@@ -121,6 +142,10 @@ export default function LandingPage() {
           Drag blocks, connect logic, and trade on Polymarket — all from a visual canvas.
           Paper trade for free or go live with real orders.
         </p>
+        <div className="landing-hero-live-badge">
+          <Zap size={14} style={{ color: "#f59e0b" }} />
+          <span>Live trading on Polymarket is just <strong>5 USDC/mo</strong></span>
+        </div>
         <div className="landing-hero-actions">
           <button className="landing-btn-primary" onClick={handleStart}>
             <Play size={16} />
@@ -131,7 +156,18 @@ export default function LandingPage() {
           </a>
         </div>
         <div className="landing-hero-preview">
-          <div className="preview-window">
+          <div 
+            className="preview-window"
+            style={{
+              transform: scrollY === 0 
+                ? "perspective(1000px) rotateX(0deg) translateY(0)"
+                : `perspective(1000px) rotateX(${scrollDirection === "down" ? 8 : -4}deg) translateY(${scrollDirection === "down" ? 15 : -5}px)`,
+              transition: "transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.6s ease",
+              boxShadow: scrollDirection === "down" 
+                ? "0 30px 60px rgba(0,0,0,0.5), 0 0 0 1px var(--pb-border)" 
+                : "0 10px 30px rgba(0,0,0,0.3), 0 0 0 1px var(--pb-border)"
+            }}
+          >
             <div className="preview-toolbar">
               <span className="dot red" />
               <span className="dot yellow" />
@@ -476,9 +512,9 @@ export default function LandingPage() {
             </div>
             <div className="pricing-tier">Pro</div>
             <div className="pricing-price">
-              <span className="price-amount pb-price-old">$7</span>
-              <span className="price-amount pb-price-new">$5</span>
-              <span className="price-period">/month</span>
+              <span className="price-amount pb-price-old">7 USDC</span>
+              <span className="price-amount pb-price-new">5 USDC</span>
+              <span className="price-period">/mo</span>
             </div>
             <p className="pricing-desc">Full power. Real trading + copy trading on Polymarket.</p>
             <ul className="pricing-features">
@@ -500,7 +536,7 @@ export default function LandingPage() {
               }
             }}>
               <Crown size={14} />
-              Upgrade to Pro — <span className="pb-price-old">$7</span> <span className="pb-price-new">$5</span>/mo
+              Upgrade to Pro — <span className="pb-price-old">7 USDC</span> <span className="pb-price-new">5 USDC</span>/mo
             </button>
             <p className="pricing-guarantee">30-day money-back guarantee</p>
           </div>

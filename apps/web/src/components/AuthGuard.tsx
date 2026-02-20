@@ -4,6 +4,8 @@
 
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
+import OnboardingTutorial from "./OnboardingTutorial";
+import VerificationOverlay from "./VerificationOverlay";
 
 export default function AuthGuard() {
   const { user, initialized } = useAuthStore();
@@ -21,5 +23,15 @@ export default function AuthGuard() {
     return <Navigate to="/" replace />;
   }
 
-  return <Outlet />;
+  // Prevent accessing protected pages (like /dashboard) if not verified,
+  // but let them see the actual layout so they can log out if they want
+  const showVerification = user.verified === false;
+
+  return (
+    <>
+      <OnboardingTutorial />
+      {showVerification && <VerificationOverlay />}
+      <Outlet />
+    </>
+  );
 }

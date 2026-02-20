@@ -9,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { useEditorStore, type SavedStrategy } from "../stores/editorStore";
 import { Workflow, Trash2, FolderOpen, Clock, Layers, Pencil, Check, X, Radio, Square, FileText } from "lucide-react";
 import { Button } from "@polyblocks/ui";
+import { timeAgoEt } from "../lib/time";
 
 interface RunningStrategy {
   strategyId: string;
@@ -18,18 +19,6 @@ interface RunningStrategy {
   iteration: number;
   intervalMs: number;
   lastError?: string;
-}
-
-function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
 }
 
 function StrategyCard({ entry, onOpen, onDelete, onRename, runningInfo, onStop }: {
@@ -122,7 +111,7 @@ function StrategyCard({ entry, onOpen, onDelete, onRename, runningInfo, onStop }
         </span>
         <span className="library-stat">
           <Clock size={12} />
-          {timeAgo(entry.updatedAt)}
+          {timeAgoEt(entry.updatedAt)}
         </span>
         {runningInfo && (
           <span className="library-stat" style={{ color: "var(--pb-accent)" }}>
@@ -174,6 +163,7 @@ export default function LibraryPage() {
   const editorRunMode = useEditorStore((s) => s.runMode);
   const editorStrategyId = useEditorStore((s) => s.strategyId);
   const editorIteration = useEditorStore((s) => s.runIteration);
+  const [loading, setLoading] = useState(true);
   const [runningMap, setRunningMap] = useState<Map<string, RunningStrategy>>(new Map());
 
   const fetchRunning = async () => {
@@ -192,7 +182,7 @@ export default function LibraryPage() {
   };
 
   useEffect(() => {
-    loadSavedStrategies();
+    loadSavedStrategies().finally(() => setLoading(false));
     fetchRunning();
     // Poll running status every 10s
     const interval = setInterval(fetchRunning, 10_000);
@@ -250,7 +240,14 @@ export default function LibraryPage() {
         )}
       </div>
 
-      {savedStrategies.length === 0 ? (
+      {loading ? (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 20px", color: "var(--pb-text-muted)" }}>
+          <div style={{ animation: "spin 1s linear infinite", marginBottom: 16 }}>
+            <Layers size={40} strokeWidth={1.5} />
+          </div>
+          <p style={{ fontSize: 14 }}>Loading your strategies...</p>
+        </div>
+      ) : savedStrategies.length === 0 ? (
         <div className="library-empty">
           <Workflow size={48} strokeWidth={1} style={{ color: "var(--pb-text-muted)", marginBottom: 16 }} />
           <p style={{ color: "var(--pb-text-muted)", fontSize: 14 }}>

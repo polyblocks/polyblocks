@@ -56,7 +56,7 @@ export default function BlockPalette() {
   const BETA_BLOCKS = new Set<BlockType>([BlockType.CustomApiData]);
 
   /** Blocks marked as Coming Soon (disabled) */
-  const COMING_SOON_BLOCKS = new Set<BlockType>([BlockType.RecentCryptoMarket]);
+  const COMING_SOON_BLOCKS = new Set<BlockType>([]);
 
   const allBlocks = Object.values(BLOCK_REGISTRY);
   const filtered = search

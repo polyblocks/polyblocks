@@ -1,10 +1,15 @@
 # Start Polyblocks dev servers (API + Frontend)
 # Run this from the polyblocks root directory
-$root = "c:\Users\gamin.DESKTOP-Q0G3AKH\Documents\polymarket bots\polyblocks\polyblocks"
+$root = "c:\Users\gamin.DESKTOP-Q0G3AKH\Documents\polymarket_bots\polyblocks\polyblocks"
 
 # 0) Kill any existing node processes from previous runs
 Write-Host "Stopping old node processes..." -ForegroundColor Yellow
-Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# Kill only what's on our ports, not ALL node
+$ports = @(3001, 3000, 5173)
+foreach ($port in $ports) {
+    $procId = (netstat -ano | Select-String ":$port " | ForEach-Object { ($_ -split '\s+')[-1] }) | Select-Object -First 1
+    if ($procId) { Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue }
+}
 Start-Sleep -Seconds 2
 Write-Host "Cleared." -ForegroundColor Green
 
@@ -20,7 +25,7 @@ Start-Process pwsh -ArgumentList "-NoExit","-Command","cd '$root\apps\api'; npx 
 # 2) Poll until port 3001 is listening (simple TCP check — no HTTP needed)
 Write-Host "Waiting for API on port 3001..." -ForegroundColor Yellow
 $ready = $false
-for ($i = 0; $i -lt 30; $i++) {
+for ($i = 0; $i -lt 45; $i++) {
     Start-Sleep -Seconds 1
     $tcp = New-Object System.Net.Sockets.TcpClient
     try {
@@ -42,5 +47,5 @@ if ($ready) {
     Set-Location "$root\apps\web"
     pnpm run dev
 } else {
-    Write-Host "API did not respond within 30s — check the API window for errors" -ForegroundColor Red
+    Write-Host "API did not respond within 30s - check the API window for errors" -ForegroundColor Red
 }

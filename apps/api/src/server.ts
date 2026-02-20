@@ -19,6 +19,7 @@ if (existsSync(envPath)) {
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
+import fastifyRateLimit from "@fastify/rate-limit";
 import { connectDb } from "./db.js";
 import { registerStrategyRoutes } from "./routes/strategies.js";
 import { registerMarketRoutes } from "./routes/markets.js";
@@ -45,6 +46,11 @@ async function main() {
     origin: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
+  });
+
+  await app.register(fastifyRateLimit, {
+    max: 100, // global limit
+    timeWindow: '1 minute'
   });
 
   // ── Connect to MongoDB ──────────────────────────────────────────────────

@@ -19,6 +19,10 @@ export interface DbUser {
     googleId: string;
     passwordHash: string;
     createdAt: string;
+    verified?: boolean;
+    verificationCode?: string;
+    verificationCodeExpiresAt?: Date;
+    hasUsedTrial?: boolean;
 }
 export interface DbSession {
     _id: string;

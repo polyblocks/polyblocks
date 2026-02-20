@@ -17,6 +17,7 @@ import {
   ArrowDownRight,
 } from "lucide-react";
 import { BLOCK_REGISTRY, BlockType } from "@polyblocks/types";
+import { formatEtTimeShort } from "../../lib/time";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ function LogsTab() {
         <div key={log.id} className="log-run-group">
           <div className="log-run-header">
             <span style={{ color: "var(--pb-text-muted)", fontSize: 11 }}>
-              {new Date(log.startedAt).toLocaleTimeString()}
+              {formatEtTimeShort(log.startedAt)}
             </span>
             <span
               style={{
@@ -168,7 +169,7 @@ function TradesTab() {
           {trades.map((trade) => (
             <tr key={trade.id} className={`trade-row trade-${trade.side.toLowerCase()}`}>
               <td className="trade-time">
-                {new Date(trade.executedAt).toLocaleTimeString()}
+                {formatEtTimeShort(trade.executedAt)}
               </td>
               <td>
                 <span className={`trade-side-badge ${trade.side.toLowerCase()}`}>
@@ -268,7 +269,7 @@ function PositionsTab() {
             return (
               <tr key={`${pos.tokenId}-${i}`} className="trade-row">
                 <td className="trade-time">
-                  {new Date(pos.openedAt).toLocaleTimeString()}
+                  {formatEtTimeShort(pos.openedAt)}
                 </td>
                 <td>
                   <span className={`trade-side-badge ${pos.side.toLowerCase()}`}>

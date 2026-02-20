@@ -20,6 +20,9 @@ function safeJsonParse(value, fallback) {
 }
 /** Map a raw Gamma market to a clean shape */
 function mapMarket(m) {
+    // Use eventStartTime as the true start date (when the market opens for trading),
+    // fallback to startDate if missing.
+    const trueStart = m.eventStartTime || m.startDate || "";
     return {
         conditionId: m.conditionId,
         question: m.question,
@@ -38,8 +41,8 @@ function mapMarket(m) {
         bestAsk: m.bestAsk,
         lastTradePrice: m.lastTradePrice,
         spread: m.spread,
-        startDate: m.startDate || "",
-        endDate: m.endDate || "",
+        startDate: trueStart,
+        endDate: (m.endDate || ""),
         category: m.category || "",
         negRisk: m.negRisk ?? false,
     };
@@ -54,8 +57,11 @@ export async function registerMarketRoutes(app) {
             active: "true",
             closed: "false",
             order: query.order || "volume24hr",
-            ascending: "false",
+            ascending: query.ascending || "false",
         });
+        if (query.end_date_min) {
+            params.append("end_date_min", query.end_date_min);
+        }
         const res = await fetch(`${GAMMA_HOST}/markets?${params}`);
         if (!res.ok) {
             return { error: "Failed to fetch markets", status: res.status };

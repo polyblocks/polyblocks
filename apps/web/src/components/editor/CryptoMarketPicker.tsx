@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Input, Select, Button } from "@polyblocks/ui";
-import { RefreshCw, Search, Loader2, TrendingDown, TrendingUp } from "lucide-react";
+import { Select, Button } from "@polyblocks/ui";
+import { RefreshCw, Loader2, TrendingDown, TrendingUp, Radio, Clock } from "lucide-react";
+import { formatEtTimeShort } from "../../lib/time";
 
 interface MarketResult {
   conditionId?: string;
@@ -33,13 +34,24 @@ const CRYPTO_ALIASES: Record<string, string[]> = {
   BTC: ["BTC", "Bitcoin"],
   ETH: ["ETH", "Ethereum"],
   SOL: ["SOL", "Solana"],
-  DOGE: ["DOGE", "Dogecoin"],
   XRP: ["XRP", "Ripple"],
-  AVAX: ["AVAX", "Avalanche"],
-  TRUMP: ["TRUMP", "Donald Trump"],
 };
 
-function matchesTimeframe(text: string, timeframe: string): boolean {
+function matchesTimeframe(text: string, timeframe: string, startIso?: string, endIso?: string): boolean {
+  if (startIso && endIso) {
+    const startMs = Date.parse(startIso);
+    const endMs = Date.parse(endIso);
+    if (Number.isFinite(startMs) && Number.isFinite(endMs)) {
+      const diffMin = (endMs - startMs) / 60000;
+      if (timeframe === "1h" && diffMin >= 55 && diffMin <= 65) return true;
+      if (timeframe === "15m" && diffMin >= 13 && diffMin <= 17) return true;
+      if (timeframe === "5m" && diffMin >= 3 && diffMin <= 7) return true;
+      if (timeframe === "1m" && diffMin >= 0 && diffMin <= 2) return true;
+      // If dates don't definitively match our exact minute diff, let it fall through to regex check.
+    }
+  }
+
+  // Fallback to text matching if dates are missing/invalid/unclear
   const lower = text.toLowerCase();
   const m = lower.match(/(\d{1,2}):(\d{2})\s*(am|pm)\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)/);
   if (m) {
@@ -100,19 +112,28 @@ function pickActiveMarket(markets: MarketResult[], nowMs: number): MarketResult 
       const end = endMs ?? Infinity;
       return start <= nowMs && nowMs < end;
     })
-    .sort((a, b) => (b.startMs ?? 0) - (a.startMs ?? 0));
+    .sort((a, b) => (a.endMs ?? Infinity) - (b.endMs ?? Infinity));
 
   if (activeNow.length > 0) return activeNow[0].m;
+  
+  // Fallback to the next upcoming market if none are currently active
+  const upcoming = markets
+    .map((m) => ({ m, startMs: parseIsoMs(m.startDate) }))
+    .filter(({ m, startMs }) => m.conditionId && m.active !== false && !m.closed && startMs !== null && startMs > nowMs)
+    .sort((a, b) => (a.startMs ?? Infinity) - (b.startMs ?? Infinity));
+    
+  if (upcoming.length > 0) return upcoming[0].m;
+  
   return markets.length > 0 ? markets[0] : null;
 }
 
 function formatTimeRange(startIso?: string, endIso?: string) {
   const start = startIso ? new Date(startIso) : null;
   const end = endIso ? new Date(endIso) : null;
-  const fmt = (d: Date) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (start && end) return `${fmt(start)} – ${fmt(end)}`;
-  if (start) return `from ${fmt(start)}`;
-  if (end) return `until ${fmt(end)}`;
+  const fmt = (d: Date) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: "America/New_York" });
+  if (start && end) return `${fmt(start)} – ${fmt(end)} ET`;
+  if (start) return `from ${fmt(start)} ET`;
+  if (end) return `until ${fmt(end)} ET`;
   return "";
 }
 
@@ -139,20 +160,15 @@ function timeframeToMs(timeframe: string): number | null {
 }
 
 const CRYPTO_OPTIONS = [
-  { value: "BTC", label: "BTC" },
-  { value: "ETH", label: "ETH" },
-  { value: "SOL", label: "SOL" },
-  { value: "DOGE", label: "DOGE" },
-  { value: "XRP", label: "XRP" },
-  { value: "AVAX", label: "AVAX" },
-  { value: "TRUMP", label: "TRUMP" },
-  { value: "__custom__", label: "Custom…" },
+  { value: "BTC", label: "₿ BTC" },
+  { value: "ETH", label: "Ξ ETH" },
+  { value: "SOL", label: "◎ SOL" },
+  { value: "XRP", label: "✕ XRP" },
 ];
 
 export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMarketPickerProps) {
   const cryptoSymbol = String(config.cryptoSymbol || "BTC").toUpperCase();
   const timeframe = String(config.timeframe || "5m");
-  const searchQuery = String(config.searchQuery || "");
   const [results, setResults] = useState<MarketResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -168,7 +184,7 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
   const cryptoTokens = useMemo(() => getCryptoTokens(cryptoSymbol), [cryptoSymbol]);
   const cryptoOptionValue = useMemo(() => {
     const known = CRYPTO_OPTIONS.some((o) => o.value === cryptoSymbol);
-    return known ? cryptoSymbol : "__custom__";
+    return known ? cryptoSymbol : "BTC";
   }, [cryptoSymbol]);
 
   useEffect(() => {
@@ -251,7 +267,8 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
     setRefreshing(!isFirstLoad);
     setError("");
     try {
-      const res = await fetch(`/api/markets/search?limit=200&order=startDate`, { signal: controller.signal });
+      const nowIso = new Date().toISOString();
+      const res = await fetch(`/api/markets/search?limit=500&order=endDate&ascending=true&end_date_min=${nowIso}`, { signal: controller.signal });
       const data = await res.json();
       
       if (!Array.isArray(data)) {
@@ -269,17 +286,13 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
           return false;
         }
         
-        if (searchQuery && !hay.includes(searchQuery.toLowerCase())) {
-          return false;
-        }
-        
-        return matchesTimeframe(hay, timeframe);
+        return matchesTimeframe(hay, timeframe, m.eventStartTime || m.startDate, m.endDate);
       });
 
       const sorted = filtered.sort((a, b) => {
-        const aTime = Date.parse(a.startDate || a.endDate || "") || 0;
-        const bTime = Date.parse(b.startDate || b.endDate || "") || 0;
-        return bTime - aTime;
+        const aTime = Date.parse(a.endDate || "") || Infinity;
+        const bTime = Date.parse(b.endDate || "") || Infinity;
+        return aTime - bTime;
       });
 
       setResults(sorted);
@@ -304,14 +317,14 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
       setLoading(false);
       setRefreshing(false);
     }
-  }, [applyMarketToConfig, cryptoSymbol, cryptoTokens, fetchMidpoints, searchQuery, timeframe]);
+  }, [applyMarketToConfig, cryptoSymbol, cryptoTokens, fetchMidpoints, timeframe]);
 
   useEffect(() => {
     fetchMarkets();
     return () => {
       abortRef.current?.abort();
     };
-  }, [cryptoSymbol, fetchMarkets, searchQuery, timeframe]);
+  }, [cryptoSymbol, fetchMarkets, timeframe]);
 
   useEffect(() => {
     const intervalMs = timeframeToMs(timeframe) ?? 5 * 60_000;
@@ -333,8 +346,7 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
 
   const formatDate = (iso?: string) => {
     if (!iso) return "";
-    const d = new Date(iso);
-    return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    return formatEtTimeShort(iso);
   };
 
   const activeMarket = useMemo(() => {
@@ -356,12 +368,11 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 120px", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <Select
           value={cryptoOptionValue}
           onChange={(e) => {
             const v = e.target.value;
-            if (v === "__custom__") return;
             onConfigChange("cryptoSymbol", v);
           }}
         >
@@ -369,11 +380,6 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </Select>
-        <Input
-          placeholder="Symbol (BTC, ETH, SOL)"
-          value={cryptoSymbol}
-          onChange={(e) => onConfigChange("cryptoSymbol", e.target.value)}
-        />
         <Select
           value={timeframe}
           onChange={(e) => onConfigChange("timeframe", e.target.value)}
@@ -384,26 +390,20 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
         </Select>
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <div style={{ position: "relative", flex: 1 }}>
-          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--pb-text-muted)" }} />
-          <Input
-            style={{ paddingLeft: 30 }}
-            placeholder="Search recent crypto markets"
-            value={searchQuery}
-            onChange={(e) => onConfigChange("searchQuery", e.target.value)}
-          />
-        </div>
         <Button size="sm" onClick={fetchMarkets} disabled={loading}>
           {refreshing ? <Loader2 size={14} /> : <RefreshCw size={14} />}
           {refreshing ? "Refreshing" : "Refresh"}
         </Button>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12, color: "var(--pb-text-muted)" }}>
-        <div>
-          {activeMarket?.startDate || activeMarket?.endDate ? `Active: ${formatTimeRange(activeMarket.startDate, activeMarket.endDate)}` : ""}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <Radio size={12} style={{ color: activeMarket ? "var(--pb-success)" : "var(--pb-text-muted)" }} />
+          <span style={{ fontWeight: 600, color: activeMarket ? "var(--pb-success)" : "var(--pb-text-muted)" }}>LIVE</span>
+          {activeMarket?.startDate || activeMarket?.endDate ? ` ${formatTimeRange(activeMarket.startDate, activeMarket.endDate)}` : ""}
         </div>
-        <div>
-          {lastUpdatedAt ? `Updated ${new Date(lastUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <Clock size={12} />
+          {lastUpdatedAt ? ` ${new Date(lastUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
         </div>
       </div>
       {error && (
@@ -455,16 +455,7 @@ export default function CryptoMarketPicker({ config, onConfigChange }: CryptoMar
           </div>
         </div>
       )}
-      {results.slice(0, 6).map((m) => (
-        <div key={m.conditionId} className="pb-card" style={{ padding: 12, border: m.conditionId === config.conditionId ? "1px solid var(--pb-accent)" : undefined }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>
-            {m.groupItemTitle || m.question}
-          </div>
-          <div style={{ fontSize: 12, color: "var(--pb-text-muted)", marginTop: 4 }}>
-            {formatDate(m.startDate || m.endDate)}
-          </div>
-        </div>
-      ))}
+
     </div>
   );
 }

@@ -88,7 +88,7 @@ describe("CryptoMarketPicker (Latest Crypto Market)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<Wrapper initialConfig={{ cryptoSymbol: "BTC", timeframe: "5m", searchQuery: "" }} />);
+    render(<Wrapper initialConfig={{ cryptoSymbol: "BTC", timeframe: "5m" }} />);
 
     await waitFor(() => {
       expect(screen.getByTestId("conditionId")).toHaveTextContent("btc_active");
@@ -135,7 +135,7 @@ describe("CryptoMarketPicker (Latest Crypto Market)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<Wrapper initialConfig={{ cryptoSymbol: "BTC", timeframe: "5m", searchQuery: "" }} />);
+    render(<Wrapper initialConfig={{ cryptoSymbol: "BTC", timeframe: "5m" }} />);
 
     await waitFor(() => {
       expect(screen.getByText("52.0%")).toBeInTheDocument();
@@ -189,7 +189,7 @@ describe("CryptoMarketPicker (Latest Crypto Market)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTimeAsync });
-    render(<Wrapper initialConfig={{ cryptoSymbol: "BTC", timeframe: "5m", searchQuery: "" }} />);
+    render(<Wrapper initialConfig={{ cryptoSymbol: "BTC", timeframe: "5m" }} />);
 
     await waitFor(() => {
       expect(screen.getByTestId("conditionId")).toHaveTextContent("btc_active");

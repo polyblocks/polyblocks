@@ -229,6 +229,7 @@ export interface UserProfile {
     /** Whether live trading is enabled */
     liveEnabled: boolean;
     createdAt: string;
+    verified?: boolean;
 }
 export interface StrategyTemplate {
     id: string;

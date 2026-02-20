@@ -6,6 +6,7 @@ import { useEditorStore } from "../../stores/editorStore";
 import { Button } from "@polyblocks/ui";
 import { Trash2, ChevronDown, CheckCircle, XCircle, SkipForward, Clock } from "lucide-react";
 import { BLOCK_REGISTRY, BlockType } from "@polyblocks/types";
+import { formatEtTimeShort } from "../../lib/time";
 
 function getNodeLabel(nodeId: string): string {
   const nodes = useEditorStore.getState().nodes;
@@ -60,7 +61,7 @@ export default function LogDrawer() {
           <div key={log.id} className="log-run-group">
             <div className="log-run-header">
               <span style={{ color: "var(--pb-text-muted)", fontSize: 11 }}>
-                {new Date(log.startedAt).toLocaleTimeString()}
+                {formatEtTimeShort(log.startedAt)}
               </span>
               <span style={{
                 color: log.status === "completed" ? "var(--pb-logic)" : "var(--pb-risk)",
