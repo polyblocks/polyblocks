@@ -31,6 +31,19 @@ export default function LandingPage() {
   // Scroll effect state
   const [scrollY, setScrollY] = useState(0);
   const [scrollDirection, setScrollDirection] = useState<"up" | "down">("up");
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      // Calculate mouse position relative to center of screen for parallax
+      const x = (e.clientX - window.innerWidth / 2) * 0.05;
+      const y = (e.clientY - window.innerHeight / 2) * 0.05;
+      setMousePos({ x, y });
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
 
   useEffect(() => {
     let lastScrollY = window.pageYOffset;
@@ -91,10 +104,16 @@ export default function LandingPage() {
     <div className="landing">
       {/* ── Background Animation ───────────────────────────────────────── */}
       <div className="landing-bg-animation">
-        <div className="glow-orb orb-1" />
-        <div className="glow-orb orb-2" />
-        <div className="glow-orb orb-3" />
-        <div className="grid-overlay" />
+        <div style={{ transform: `translate(${mousePos.x * 1.5}px, ${mousePos.y * 1.5}px)`, transition: 'transform 0.1s ease-out' }}>
+          <div className="glow-orb orb-1" />
+        </div>
+        <div style={{ transform: `translate(${mousePos.x * -1.2}px, ${mousePos.y * -1.2}px)`, transition: 'transform 0.1s ease-out' }}>
+          <div className="glow-orb orb-2" />
+        </div>
+        <div style={{ transform: `translate(${mousePos.x * 0.8}px, ${mousePos.y * 0.8}px)`, transition: 'transform 0.1s ease-out' }}>
+          <div className="glow-orb orb-3" />
+        </div>
+        <div className="grid-overlay" style={{ transform: `translate(${mousePos.x * -0.5}px, ${mousePos.y * -0.5}px)`, transition: 'transform 0.1s ease-out' }} />
       </div>
 
       {/* ── Navbar ────────────────────────────────────────────────────── */}
@@ -530,13 +549,13 @@ export default function LandingPage() {
             </ul>
             <button className="pricing-btn pro" onClick={() => {
               if (isLoggedIn()) {
-                navigate("/pricing?promo=FreeTrial101");
+                navigate("/pricing");
               } else {
                 login();
               }
             }}>
               <Crown size={14} />
-              Start 7-Day Free Trial
+              Upgrade to Pro — <span className="pb-price-old">7 USDC</span> <span className="pb-price-new">5 USDC</span>/mo
             </button>
             <p className="pricing-guarantee">30-day money-back guarantee</p>
           </div>

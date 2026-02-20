@@ -7,9 +7,9 @@ export default function OnboardingTutorial() {
   const [run, setRun] = useState(false);
 
   useEffect(() => {
-    // Only run for free users who haven't completed it yet and only on the dashboard or editor pages
+    // Only run for free users who haven't completed it yet and only on the editor page
     if (user && user.tier === "free") {
-      const isCorrectPage = window.location.pathname.includes("/dashboard") || window.location.pathname.includes("/editor");
+      const isCorrectPage = window.location.pathname.includes("/editor");
       if (isCorrectPage) {
         const hasSeen = localStorage.getItem("polyblocks_tutorial_seen");
         if (!hasSeen) {
@@ -120,26 +120,38 @@ export default function OnboardingTutorial() {
       styles={{
         options: {
           zIndex: 10000,
-          primaryColor: '#7e22ce',
+          primaryColor: '#8b5cf6',
           textColor: '#f8fafc',
-          backgroundColor: '#1e293b',
-          arrowColor: '#1e293b',
+          backgroundColor: '#0f172a',
+          arrowColor: '#0f172a',
+          overlayColor: 'rgba(0, 0, 0, 0.7)',
         },
         buttonClose: {
           display: 'none',
         },
         buttonSkip: {
           color: '#94a3b8',
+          fontSize: '13px',
+          fontWeight: 600,
         },
         buttonNext: {
           backgroundColor: '#8b5cf6',
+          borderRadius: '8px',
+          padding: '8px 16px',
+          fontWeight: 600,
+          fontSize: '13px',
+          boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
         },
         buttonBack: {
           color: '#cbd5e1',
+          fontSize: '13px',
+          fontWeight: 600,
         },
         tooltip: {
-          borderRadius: '8px',
-          padding: '20px',
+          borderRadius: '16px',
+          padding: '24px',
+          border: '1px solid #1e293b',
+          boxShadow: '0 24px 48px rgba(0, 0, 0, 0.6)',
         },
         tooltipContainer: {
           textAlign: 'left',

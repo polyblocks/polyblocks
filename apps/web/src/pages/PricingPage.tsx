@@ -124,14 +124,8 @@ export default function PricingPage() {
   // MetaMask state
   const [mmBusy, setMmBusy] = useState(false);
   const [mmStatus, setMmStatus] = useState<string | null>(null);
-  const [promoCode, setPromoCode] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("promo") || "";
-  });
-  const [paymentMethod, setPaymentMethod] = useState<"metamask" | "manual" | "promo">(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("promo") ? "promo" : "metamask";
-  });
+  const [promoCode, setPromoCode] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"metamask" | "manual" | "promo">("metamask");
   const [promoStatus, setPromoStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [promoBusy, setPromoBusy] = useState(false);
 
@@ -597,7 +591,7 @@ export default function PricingPage() {
             <div className="pricing-payment">
               <h3>Redeem Promo Code</h3>
               <p className="pricing-payment-note">
-                Got a promo code? Enter it below to unlock your Pro trial or access.
+                Got a promo code? Enter it below to unlock your Pro access.
               </p>
               
               <div className="pricing-verify" style={{ marginTop: 24 }}>
