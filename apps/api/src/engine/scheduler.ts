@@ -170,6 +170,7 @@ class StrategyScheduler {
     const ctx: ExecutionContext = {
       runId,
       strategyId: entry.graph.id,
+      userId: entry.graph.userId,
       mode: entry.mode,
       log: (nodeId, message, data) => {
         console.log(`  [${nodeId}] ${message}`, data ?? "");
@@ -180,7 +181,7 @@ class StrategyScheduler {
     };
 
     try {
-      const handlers = entry.mode === "live" ? createLiveHandlers() : createPaperHandlers();
+      const handlers = entry.mode === "live" ? createLiveHandlers(entry.graph.userId) : createPaperHandlers();
       const result = await evaluateGraph(entry.graph, handlers, ctx);
       entry.lastResult = result;
       entry.iteration++;

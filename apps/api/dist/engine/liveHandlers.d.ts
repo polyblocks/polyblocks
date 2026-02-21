@@ -6,5 +6,5 @@
  * submit actual orders on Polygon mainnet.
  */
 import type { NodeHandlerRegistry } from "@polyblocks/engine-core";
-export declare function createLiveHandlers(): NodeHandlerRegistry;
+export declare function createLiveHandlers(userId: string): NodeHandlerRegistry;
 //# sourceMappingURL=liveHandlers.d.ts.map

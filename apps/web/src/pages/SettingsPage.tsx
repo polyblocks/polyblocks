@@ -49,7 +49,7 @@ const SIGNATURE_TYPES = [
 ];
 
 export default function SettingsPage() {
-  const { user, isPro, logout, refreshUser } = useAuthStore();
+  const { user, isPro, logout, refreshUser, token } = useAuthStore();
 
   // Form state
   const [privateKey, setPrivateKey] = useState("");
@@ -72,7 +72,9 @@ export default function SettingsPage() {
   async function fetchStatus() {
     try {
       setLoading(true);
-      const res = await fetch("/api/credentials/status");
+      const res = await fetch("/api/credentials/status", {
+        headers: { "x-session-token": token || "" },
+      });
       const data = await res.json() as CredentialStatus;
       setStatus(data);
       setSignatureType(data.signatureType);
@@ -96,7 +98,10 @@ export default function SettingsPage() {
     try {
       const res = await fetch("/api/credentials/save", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-session-token": token || "" 
+        },
         body: JSON.stringify({
           privateKey: privateKey.trim(),
           signatureType,
@@ -136,7 +141,10 @@ export default function SettingsPage() {
     setMessage(null);
 
     try {
-      const res = await fetch("/api/credentials/test", { method: "POST" });
+      const res = await fetch("/api/credentials/test", { 
+        method: "POST",
+        headers: { "x-session-token": token || "" } 
+      });
       const data = await res.json() as { success: boolean; error?: string; message?: string };
 
       if (data.success) {
@@ -158,7 +166,10 @@ export default function SettingsPage() {
     if (!confirm("Are you sure you want to clear all credentials?")) return;
 
     try {
-      await fetch("/api/credentials/clear", { method: "DELETE" });
+      await fetch("/api/credentials/clear", { 
+        method: "DELETE",
+        headers: { "x-session-token": token || "" } 
+      });
       setMessage({ type: "success", text: "Credentials cleared" });
       setPrivateKey("");
       setFunderAddress("");

@@ -119,7 +119,7 @@ const livePlaceOrderHandler: NodeHandler = {
       `🔴 LIVE MARKET ${orderTypeStr} ${side} ${outcome} | $${sizeUsd} USD`,
     );
 
-    const client = await createClobClientAsync();
+    const client = await createClobClientAsync(ctx.userId);
     const clientReady = Date.now() - t0;
     ctx.log(node.id, `🔑 Client ready in ${clientReady}ms | tokenId: ${tokenId}`);
     ctx.log(node.id, `🔑 CLOB_HOST: ${CLOB_HOST}`);
@@ -242,7 +242,7 @@ const liveCancelOrderHandler: NodeHandler = {
     }
 
     try {
-      const client = await createClobClientAsync();
+      const client = await createClobClientAsync(ctx.userId);
       await client.cancelOrder({ orderID: orderId });
       ctx.log(node.id, `✅ LIVE CANCEL — Order ${orderId} cancelled`);
       return { cancelled: true };
@@ -278,7 +278,7 @@ const liveClosePositionHandler: NodeHandler = {
     ctx.log(node.id, `🔴 LIVE CLOSE POSITION — querying balance for ${outcome} token`);
 
     try {
-      const client = await createClobClientAsync();
+      const client = await createClobClientAsync(ctx.userId);
 
       // Query actual position size from the CLOB API
       const balanceResponse = await client.getBalanceAllowance({ asset_type: AssetType.CONDITIONAL }) as {
@@ -367,7 +367,7 @@ const liveLimitOrderHandler: NodeHandler = {
     );
 
     try {
-      const client = await createClobClientAsync();
+      const client = await createClobClientAsync(ctx.userId);
       const marketInfo = await client.getMarket(market?.conditionId || "");
 
       const response = await client.createAndPostOrder(
@@ -463,15 +463,23 @@ const liveLimitOrderHandler: NodeHandler = {
 
 // ─── Registry ───────────────────────────────────────────────────────────────
 
-export function createLiveHandlers(): NodeHandlerRegistry {
+export function createLiveHandlers(userId: string): NodeHandlerRegistry {
   // Start with all paper handlers (data, logic, triggers, risk all work the same)
   const registry = createPaperHandlers();
 
-  // Override action blocks with live implementations
-  registry.set(BlockType.PlaceOrder, livePlaceOrderHandler);
-  registry.set(BlockType.LimitOrder, liveLimitOrderHandler);
-  registry.set(BlockType.CancelOrder, liveCancelOrderHandler);
-  registry.set(BlockType.ClosePosition, liveClosePositionHandler);
+  // Override action blocks with live implementations, passing down the userId
+  registry.set(BlockType.PlaceOrder, {
+    execute: (node, inputs, ctx) => livePlaceOrderHandler.execute(node, inputs, { ...ctx, userId })
+  });
+  registry.set(BlockType.LimitOrder, {
+    execute: (node, inputs, ctx) => liveLimitOrderHandler.execute(node, inputs, { ...ctx, userId })
+  });
+  registry.set(BlockType.CancelOrder, {
+    execute: (node, inputs, ctx) => liveCancelOrderHandler.execute(node, inputs, { ...ctx, userId })
+  });
+  registry.set(BlockType.ClosePosition, {
+    execute: (node, inputs, ctx) => liveClosePositionHandler.execute(node, inputs, { ...ctx, userId })
+  });
 
   return registry;
 }

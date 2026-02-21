@@ -37,7 +37,7 @@ export async function registerExecutionRoutes(app) {
         }
         // Validate live mode has credentials
         if (mode === "live") {
-            const creds = await getCredentials();
+            const creds = await getCredentials(graph.userId);
             if (!creds.isConfigured) {
                 return {
                     result: {
@@ -63,7 +63,7 @@ export async function registerExecutionRoutes(app) {
             },
             state: new Map(),
         };
-        const handlers = mode === "live" ? createLiveHandlers() : createPaperHandlers();
+        const handlers = mode === "live" ? createLiveHandlers(graph.userId) : createPaperHandlers();
         const result = await evaluateGraph(graph, handlers, ctx);
         // Store logs
         if (!executionLogs.has(graph.id)) {
@@ -83,7 +83,7 @@ export async function registerExecutionRoutes(app) {
         const graph = body;
         // Validate live mode has credentials
         if (mode === "live") {
-            const creds = await getCredentials();
+            const creds = await getCredentials(graph.userId);
             if (!creds.isConfigured) {
                 return { success: false, error: "No trading credentials configured." };
             }

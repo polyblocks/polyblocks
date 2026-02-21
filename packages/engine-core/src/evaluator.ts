@@ -43,6 +43,8 @@ export interface ExecutionContext {
   runId: string;
   /** Strategy being executed */
   strategyId: string;
+  /** User ID who owns the strategy */
+  userId?: string;
   /** Whether this is paper or live */
   mode: "paper" | "live";
   /** Logging */

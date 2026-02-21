@@ -48,7 +48,7 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
 
     // Validate live mode has credentials
     if (mode === "live") {
-      const creds = await getCredentials();
+      const creds = await getCredentials(graph.userId);
       if (!creds.isConfigured) {
         return {
           result: {
@@ -77,7 +77,7 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
       state: new Map(),
     };
 
-    const handlers = mode === "live" ? createLiveHandlers() : createPaperHandlers();
+    const handlers = mode === "live" ? createLiveHandlers(graph.userId) : createPaperHandlers();
     const result = await evaluateGraph(graph, handlers, ctx);
 
     // Store logs
@@ -100,7 +100,7 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
 
     // Validate live mode has credentials
     if (mode === "live") {
-      const creds = await getCredentials();
+      const creds = await getCredentials(graph.userId);
       if (!creds.isConfigured) {
         return { success: false, error: "No trading credentials configured." };
       }

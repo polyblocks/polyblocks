@@ -7,7 +7,7 @@
 import type { FastifyInstance } from "fastify";
 import { ClobClient } from "@polymarket/clob-client";
 import { Wallet } from "ethers";
-import { credentialsCol, type DbCredentials } from "../db.js";
+import { credentialsCol, sessionsCol, type DbCredentials } from "../db.js";
 import { encrypt, decrypt } from "../crypto.js";
 
 // ── Public interface for other modules (e.g. liveHandlers) ──────────────────
@@ -26,9 +26,36 @@ export interface StoredCredentials {
  * Retrieve decrypted credentials for a given userId.
  * Falls back to "default" userId for backward-compatibility with single-user mode.
  */
+function getSessionToken(headers: Record<string, unknown>): string {
+  const token = headers["x-session-token"];
+  return typeof token === "string" ? token : "";
+}
+
+async function resolveSession(token: string): Promise<string | null> {
+  if (!token) return null;
+  const session = await sessionsCol().findOne({ _id: token });
+  if (!session) return null;
+  if (session.expiresAt < new Date()) {
+    await sessionsCol().deleteOne({ _id: token });
+    return null;
+  }
+  return session.userId;
+}
+
 export async function getCredentials(userId?: string): Promise<StoredCredentials> {
-  const id = userId || "default";
-  const doc = await credentialsCol().findOne({ userId: id });
+  if (!userId) {
+    return {
+      privateKey: "",
+      apiKey: "",
+      apiSecret: "",
+      passphrase: "",
+      signatureType: 0,
+      funderAddress: "",
+      isConfigured: false,
+    };
+  }
+
+  const doc = await credentialsCol().findOne({ userId });
 
   if (!doc || !doc.isConfigured) {
     return {
@@ -59,8 +86,11 @@ const CHAIN_ID = 137;
 export async function registerCredentialRoutes(app: FastifyInstance) {
 
   // ── Get credential status (never returns private key or secret) ──────────
-  app.get("/status", async (req) => {
-    const userId = (req.query as { userId?: string }).userId || "default";
+  app.get("/status", async (req, reply) => {
+    const token = getSessionToken(req.headers as Record<string, unknown>);
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
+
     const creds = await getCredentials(userId);
 
     return {
@@ -75,19 +105,20 @@ export async function registerCredentialRoutes(app: FastifyInstance) {
   });
 
   // ── Save credentials + derive API key ────────────────────────────────────
-  app.post("/save", async (request) => {
+  app.post("/save", async (request, reply) => {
+    const token = getSessionToken(request.headers as Record<string, unknown>);
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
+
     const body = request.body as {
       privateKey: string;
       signatureType: number;
       funderAddress: string;
-      userId?: string;
     };
 
     if (!body.privateKey) {
       return { success: false, error: "Private key is required" };
     }
-
-    const userId = body.userId || "default";
 
     try {
       const signer = new Wallet(body.privateKey);
@@ -141,15 +172,21 @@ export async function registerCredentialRoutes(app: FastifyInstance) {
   });
 
   // ── Clear credentials ────────────────────────────────────────────────────
-  app.delete("/clear", async (req) => {
-    const userId = (req.query as { userId?: string }).userId || "default";
+  app.delete("/clear", async (req, reply) => {
+    const token = getSessionToken(req.headers as Record<string, unknown>);
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
+
     await credentialsCol().deleteOne({ userId });
     return { success: true };
   });
 
   // ── Test connection ──────────────────────────────────────────────────────
-  app.post("/test", async (req) => {
-    const userId = ((req.body || {}) as { userId?: string }).userId || "default";
+  app.post("/test", async (req, reply) => {
+    const token = getSessionToken(req.headers as Record<string, unknown>);
+    const userId = await resolveSession(token);
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
+
     const creds = await getCredentials(userId);
 
     if (!creds.isConfigured) {
