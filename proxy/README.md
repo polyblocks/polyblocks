@@ -3,6 +3,11 @@
 This folder contains a ready-to-use NGINX reverse proxy for the Polymarket CLOB API. 
 You can clone this and run it on a DigitalOcean droplet (or any VM) using Docker.
 
+## Recommended Region
+
+**Use London (LON1)** - Polymarket's CLOB servers are in London and the API is geo-restricted in the USA. 
+A London droplet gives the lowest latency and avoids US restrictions.
+
 ## Setup Instructions
 
 1. Install Docker and Docker Compose on your VM if you haven't already:

@@ -23,6 +23,7 @@ export interface DbUser {
     verificationCode?: string;
     verificationCodeExpiresAt?: Date;
     hasUsedTrial?: boolean;
+    proTxHash?: string;
 }
 export interface DbSession {
     _id: string;

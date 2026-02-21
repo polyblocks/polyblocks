@@ -6,6 +6,7 @@
  */
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
+import { ethers } from "ethers";
 import { usersCol, sessionsCol } from "../db.js";
 const NOTIFY_EMAIL = "gaming.oars@gmail.com";
 // ─── Email Transporter (lazy singleton) ─────────────────────────────────────
@@ -503,7 +504,55 @@ export async function registerAuthRoutes(app) {
         if (!user) {
             return reply.code(404).send({ ok: false, message: "User not found." });
         }
-        // TODO: In production, verify the tx on-chain (check USDC transfer to your wallet).
+        // Prevent double-spend / replay attacks of the same hash
+        const hashAlreadyUsed = await usersCol().findOne({ proTxHash: txHash });
+        if (hashAlreadyUsed) {
+            return reply.code(400).send({
+                ok: false,
+                message: "This transaction hash has already been used for a Pro subscription."
+            });
+        }
+        try {
+            // 1. Fetch transaction receipt from Polygon
+            const RPC_URL = process.env.POLYGON_RPC_URL || "https://polygon-rpc.com";
+            const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+            const receipt = await provider.getTransactionReceipt(txHash);
+            if (!receipt || receipt.status !== 1) {
+                return reply.code(400).send({
+                    ok: false,
+                    message: "Transaction not found or failed on chain. Wait a moment and try again."
+                });
+            }
+            // 2. Look for USDC Transfer log
+            const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
+            const PAYMENT_WALLET = "0x06f344E8805Ce78e62699b46e3d8BC78a6c1a35f";
+            const EXPECTED_AMOUNT = ethers.utils.parseUnits("5", 6); // 5 USDC (6 decimals)
+            const TRANSFER_TOPIC = ethers.utils.id("Transfer(address,address,uint256)");
+            let validPaymentFound = false;
+            for (const log of receipt.logs) {
+                if (log.address.toLowerCase() === USDC_ADDRESS.toLowerCase() && log.topics[0] === TRANSFER_TOPIC) {
+                    const toAddress = ethers.utils.getAddress(ethers.utils.hexDataSlice(log.topics[2], 12));
+                    const amount = ethers.BigNumber.from(log.data);
+                    if (toAddress.toLowerCase() === PAYMENT_WALLET.toLowerCase() && amount.gte(EXPECTED_AMOUNT)) {
+                        validPaymentFound = true;
+                        break;
+                    }
+                }
+            }
+            if (!validPaymentFound) {
+                return reply.code(400).send({
+                    ok: false,
+                    message: "Transaction does not contain a valid $5 USDC transfer to our payment wallet."
+                });
+            }
+        }
+        catch (err) {
+            app.log.error(err, "Failed to verify transaction on-chain");
+            return reply.code(500).send({
+                ok: false,
+                message: "Failed to verify transaction with the blockchain. Please try again later."
+            });
+        }
         const now = new Date();
         const expires = new Date(now);
         expires.setDate(expires.getDate() + 30);
@@ -511,6 +560,7 @@ export async function registerAuthRoutes(app) {
             tier: "pro",
             subscribedAt: now.toISOString(),
             expiresAt: expires.toISOString(),
+            proTxHash: txHash,
         };
         if (walletAddress) {
             updateFields.walletAddress = walletAddress;

@@ -25,17 +25,18 @@ const clobClientCache = new Map<string, { client: ClobClient; expiresAt: number 
 const CLIENT_CACHE_TTL_MS = 5 * 60_000;
 
 async function createClobClientAsync(userId?: string): Promise<ClobClient> {
-  const cacheKey = userId || "anonymous";
+  const creds = await getCredentials(userId);
+  if (!creds.isConfigured) {
+    throw new Error("No trading credentials configured. Go to Settings to set up your wallet.");
+  }
+
+  // Use a hash of the credentials as the cache key so it instantly invalidates if the user updates their API key or Wallet
+  const cacheKey = `${userId || "anon"}_${creds.apiKey}_${creds.privateKey.slice(0, 10)}`;
   const cached = clobClientCache.get(cacheKey);
   const now = Date.now();
 
   if (cached && now < cached.expiresAt) {
     return cached.client;
-  }
-
-  const creds = await getCredentials(userId);
-  if (!creds.isConfigured) {
-    throw new Error("No trading credentials configured. Go to Settings to set up your wallet.");
   }
 
   const signer = new Wallet(creds.privateKey);

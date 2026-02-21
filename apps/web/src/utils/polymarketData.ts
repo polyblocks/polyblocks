@@ -7,14 +7,24 @@ export interface WalletStats {
   equityCurve: number[];
 }
 
-/**
- * Fetches wallet statistics from an external source.
- * currently returns a default structure.
- * 
- * @param address The wallet address to fetch stats for
- * @returns Promise resolving to WalletStats or null
- */
 export async function fetchWalletStats(address: string): Promise<WalletStats | null> {
-  if (!address.trim()) return null;
-  return null;
+  const addr = address.trim();
+  if (!addr) return null;
+  
+  try {
+    const res = await fetch(`/api/positions/trader-stats?address=${addr}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    
+    return {
+      profit: data.profit >= 0 ? `+$${data.profit.toLocaleString()}` : `-$${Math.abs(data.profit).toLocaleString()}`,
+      volume: `~$${data.volume.toLocaleString()}`,
+      winRate: Math.round(data.winRate * 100),
+      trades: data.trades,
+      equityCurve: data.equityCurve || [100, 100],
+    };
+  } catch (err) {
+    console.error("Failed to fetch wallet stats:", err);
+    return null;
+  }
 }

@@ -108,37 +108,29 @@ export default function CopyTradingPage() {
       }
 
       setLoadingStats(true);
-      // Simulate API call
-      await new Promise((r) => setTimeout(r, 600));
 
-      // Mock data generation (deterministic based on address chars to feel consistent)
-      const seed = addr.charCodeAt(addr.length - 1) + addr.charCodeAt(addr.length - 2);
       const isSuggested = suggestedWallets.find(w => w.address.toLowerCase() === addr.toLowerCase());
 
       if (isSuggested) {
-        // High performance stats for suggested wallets
-        // Generate a nice upward trending equity curve
+        const seed = addr.charCodeAt(addr.length - 1) + addr.charCodeAt(addr.length - 2);
         let current = 100;
         const curve = [100];
         for (let i = 0; i < 20; i++) {
-          // Mostly positive moves for top traders
           const move = (Math.random() - 0.3) * 15; 
           current += move;
-          if (current < 50) current = 50; // Don't let it crash
+          if (current < 50) current = 50;
           curve.push(current);
         }
-        // Ensure it ends higher
         curve[curve.length-1] = Math.max(curve[curve.length-1], 150);
 
         setWalletStats({
           profit: isSuggested.profit,
           volume: isSuggested.volume,
-          winRate: 65 + (seed % 20), // 65-85% win rate
+          winRate: 65 + (seed % 20), 
           trades: 100 + (seed % 300),
           equityCurve: curve,
         });
       } else {
-        // Fetch real stats or return null (no random mock data)
         const stats = await fetchWalletStats(addr);
         setWalletStats(stats);
       }
