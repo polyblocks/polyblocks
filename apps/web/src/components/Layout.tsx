@@ -116,13 +116,6 @@ export default function Layout() {
         >
           <Users size={20} />
         </NavLink>
-        <NavLink
-          to="/backtesting"
-          className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}
-          title="Backtesting"
-        >
-          <FlaskConical size={20} />
-        </NavLink>
 
         <div className="nav-spacer" />
 

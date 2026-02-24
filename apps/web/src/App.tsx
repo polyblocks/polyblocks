@@ -9,7 +9,6 @@ import SettingsPage from "./pages/SettingsPage";
 import LandingPage from "./pages/LandingPage";
 import PricingPage from "./pages/PricingPage";
 import CopyTradingPage from "./pages/CopyTradingPage";
-import BacktestingPage from "./pages/BacktestingPage";
 import PositionsPage from "./pages/PositionsPage";
 import AuthCallbackPage from "./pages/AuthCallbackPage";
 import { useEffect } from "react";
@@ -41,7 +40,6 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/copy-trading" element={<CopyTradingPage />} />
-          <Route path="/backtesting" element={<BacktestingPage />} />
         </Route>
       </Route>
     </Routes>

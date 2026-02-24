@@ -69,17 +69,6 @@ export default function DashboardPage() {
           <div className="action-desc">Live and paper positions with PnL timeline</div>
         </div>
 
-        <div className="strategy-card" onClick={() => navigate("/backtesting")}>
-          <div className="action-icon" style={{ background: "rgba(59, 130, 246, 0.15)", color: "var(--pb-data)" }}>
-            <BarChart3 size={24} />
-          </div>
-          <div className="action-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span>Backtesting</span>
-            <span className="pb-badge pb-badge-utility">Coming Soon</span>
-          </div>
-          <div className="action-desc">Replay historical data and analyze performance</div>
-        </div>
-
         <div className="strategy-card" onClick={() => navigate("/copy-trading")}>
           <div className="action-icon" style={{ background: "rgba(139, 92, 246, 0.15)", color: "var(--pb-market)" }}>
             <Users size={24} />
