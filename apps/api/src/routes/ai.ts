@@ -1,5 +1,5 @@
 /**
- * AI Strategy Builder route — uses Google Vertex AI (Gemini 2.0 Flash) to generate strategy
+ * AI Strategy Builder route — uses Google Vertex AI Global Endpoint (Gemini 2.5 Flash) to generate strategy
  */
 
 import type { FastifyInstance } from "fastify";
@@ -181,11 +181,10 @@ IMPORTANT RULES:
 // ── Route registration ───────────────────────────────────────────────────
 
 export async function registerAiRoutes(app: FastifyInstance) {
-  const VERTEX_AI_ENDPOINT = process.env.VERTEX_AI_ENDPOINT || "";
   const VERTEX_AI_KEY = process.env.VERTEX_AI_KEY || "";
 
-  if (!VERTEX_AI_KEY || !VERTEX_AI_ENDPOINT) {
-    app.log.warn("VERTEX_AI_ENDPOINT / VERTEX_AI_KEY not set — AI builder will return errors");
+  if (!VERTEX_AI_KEY) {
+    app.log.warn("VERTEX_AI_KEY not set — AI builder will return errors");
   }
 
   /**
@@ -222,17 +221,18 @@ export async function registerAiRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Prompt is too long (max 2000 characters)" });
     }
 
-    if (!VERTEX_AI_KEY || !VERTEX_AI_ENDPOINT) {
+    if (!VERTEX_AI_KEY) {
       return reply.code(500).send({ error: "AI service not configured. Please contact support." });
     }
 
-    // ── Call Google Vertex AI (Gemini 2.0 Flash) ───────────────────────────────
+    // ── Call Google Vertex AI Global Endpoint (Gemini 2.5 Flash) ─────────────
     try {
-      const vertexRes = await fetch(`${VERTEX_AI_ENDPOINT}:generateContent`, {
+      const globalEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+      
+      const vertexRes = await fetch(`${globalEndpoint}?key=${VERTEX_AI_KEY}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${VERTEX_AI_KEY}`,
         },
         body: JSON.stringify({
           contents: [{
