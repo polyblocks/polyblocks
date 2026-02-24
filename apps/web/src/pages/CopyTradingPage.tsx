@@ -212,7 +212,7 @@ export default function CopyTradingPage() {
             </div>
             <Button variant="primary" onClick={() => navigate("/pricing")}>
               <Crown size={14} />
-              Upgrade to Pro — <span className="pb-price-old">$7</span> <span className="pb-price-new">$5</span>/mo
+              Upgrade to Pro — <span className="pb-price-old">$20</span> <span className="pb-price-new">$10</span>/mo
             </Button>
           </div>
         </div>

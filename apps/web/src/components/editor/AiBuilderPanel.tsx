@@ -107,7 +107,7 @@ export default function AiBuilderPanel() {
           </p>
           <Button onClick={upgradeToPro} style={{ marginTop: 12 }}>
             <Crown size={14} />
-            Upgrade to Pro — <span className="pb-price-old">$7</span> <span className="pb-price-new">$5</span>/mo
+            Upgrade to Pro — <span className="pb-price-old">$20</span> <span className="pb-price-new">$10</span>/mo
           </Button>
         </div>
       </div>
