@@ -5,6 +5,70 @@
 import type { FastifyInstance } from "fastify";
 import { sessionsCol, usersCol, type DbUser } from "../db.js";
 
+// ── Rate limit helpers ────────────────────────────────────────────────────
+
+interface AiUsageRecord {
+  _id: string; // userId_YYYY-MM-DD
+  userId: string;
+  date: string;
+  count: number;
+  lastUsed: Date;
+}
+
+async function getAiUsageCol() {
+  const { getDb } = await import("../db.js");
+  return getDb().collection<AiUsageRecord>("ai_usage");
+}
+
+async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remaining: number; resetAt: string }> {
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const recordId = `${userId}_${today}`;
+  
+  const usageCol = await getAiUsageCol();
+  const record = await usageCol.findOne({ _id: recordId });
+  
+  const dailyLimit = 30;
+  const resetAt = new Date();
+  resetAt.setDate(resetAt.getDate() + 1);
+  resetAt.setHours(0, 0, 0, 0);
+  
+  if (!record) {
+    // First use today
+    await usageCol.insertOne({
+      _id: recordId,
+      userId,
+      date: today,
+      count: 1,
+      lastUsed: new Date(),
+    });
+    return {
+      allowed: true,
+      remaining: dailyLimit - 1,
+      resetAt: resetAt.toISOString(),
+    };
+  }
+  
+  if (record.count >= dailyLimit) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: resetAt.toISOString(),
+    };
+  }
+  
+  // Increment count
+  await usageCol.updateOne(
+    { _id: recordId },
+    { $inc: { count: 1 }, $set: { lastUsed: new Date() } }
+  );
+  
+  return {
+    allowed: true,
+    remaining: dailyLimit - record.count - 1,
+    resetAt: resetAt.toISOString(),
+  };
+}
+
 // ── Auth helper (mirrors auth.ts pattern) ────────────────────────────────
 
 async function resolveSession(token: string): Promise<string | null> {
@@ -193,7 +257,7 @@ export async function registerAiRoutes(app: FastifyInstance) {
    * Headers: x-session-token
    * Returns: { strategy: { name, nodes, edges } }
    */
-  app.post("/generate", async (req, reply) => {
+   app.post("/generate", async (req, reply) => {
     // ── Auth: require Pro ─────────────────────────────────────────────────
     const token = (req.headers["x-session-token"] as string) || "";
     const userId = await resolveSession(token);
@@ -210,6 +274,20 @@ export async function registerAiRoutes(app: FastifyInstance) {
     if (user.tier !== "pro" || (user.expiresAt && new Date(user.expiresAt) < new Date())) {
       return reply.code(403).send({ error: "Pro subscription required for AI Strategy Builder" });
     }
+
+    // ── Rate limit check (30 requests/day) ────────────────────────────────
+    const rateLimit = await checkRateLimit(userId);
+    if (!rateLimit.allowed) {
+      return reply.code(429).send({ 
+        error: "Daily AI limit reached. You have used all 30 free generations today.",
+        resetAt: rateLimit.resetAt,
+      });
+    }
+
+    // Add rate limit headers
+    reply.header("X-RateLimit-Limit", 30);
+    reply.header("X-RateLimit-Remaining", rateLimit.remaining);
+    reply.header("X-RateLimit-Reset", rateLimit.resetAt);
 
     // ── Validate input ───────────────────────────────────────────────────
     const { prompt } = req.body as { prompt?: string };
