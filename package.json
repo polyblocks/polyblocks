@@ -10,7 +10,7 @@
     "lint": "turbo lint",
     "test": "node --loader tsx --test test",
     "clean": "turbo clean",
-    "heroku-postbuild": "pnpm run clean && pnpm run build"
+    "heroku-postbuild": "npm install -g pnpm && pnpm run clean && pnpm run build"
   },
   "engines": {
     "node": "22.x"
