@@ -227,7 +227,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function PositionsPage() {
-  const paperMaintenance = true;
+  const paperMaintenance = false;
   const [mode, setMode] = useState<"live" | "paper">("live");
   const [positions, setPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -493,7 +493,7 @@ export default function PositionsPage() {
   // Fetch paper trades from API
   const fetchPaperData = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
-    if (!userId) return;
+    if (!userId || !token) return;
     try {
       if (!silent && !paperLoaded) {
         setPaperLoading(true);
@@ -501,8 +501,13 @@ export default function PositionsPage() {
       const headers: Record<string, string> = {};
       if (token) headers["x-session-token"] = token;
 
-      const res = await fetch(`/api/paper-trades/all?userId=${userId}`, { headers });
-      if (!res.ok) throw new Error("Failed to fetch paper trades");
+      const res = await fetch(`/api/paper-trades/all`, { headers });
+      if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error("Not authenticated. Please log in.");
+        }
+        throw new Error("Failed to fetch paper trades");
+      }
       const data = await res.json() as { trades: PaperTrade[] };
       const allTrades = data.trades || [];
 

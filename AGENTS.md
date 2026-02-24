@@ -276,6 +276,36 @@ Detailed docs available in `packages/agent-skills/`:
 
 ---
 
+## Authentication & Security
+
+### Session-Based Auth
+- Sessions stored in MongoDB `sessions` collection
+- Session token passed via `x-session-token` header
+- Token validated server-side using `resolveSession()` helper
+- All protected routes must validate session before accessing user data
+
+### Paper Trades Isolation (CRITICAL)
+Paper trades MUST be isolated per authenticated user:
+- Always validate session token server-side (never trust frontend userId)
+- Use `requireAuth()` helper in routes to extract userId from session
+- Filter all queries by `{ userId, strategyId }`
+- Return 401 if not authenticated
+
+Example pattern for protected routes:
+```typescript
+const userId = await requireAuth(request);
+if (!userId) return reply.code(401).send({ error: "Not authenticated" });
+// Use userId in all database operations
+```
+
+### Common Auth Issues
+- **"anonymous" fallback**: Frontend returns "anonymous" when user not logged in — this is a bug indicator
+- **Shared accounts**: Multiple users with same credentials will share data
+- **Expired sessions**: Check for 401 errors in browser console
+- **Missing headers**: Verify `x-session-token` header in Network tab
+
+---
+
 ## Playwright E2E Testing
 
 Playwright is configured to test the web frontend locally via `pnpm test` or `npx playwright test`.

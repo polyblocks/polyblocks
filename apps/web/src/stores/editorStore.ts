@@ -483,9 +483,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     // Load trades & logs from API (async, non-blocking)
     if (typeof window !== "undefined") {
-      const userId = getUserId();
-      fetch(`/api/paper-trades/${graph.id}?userId=${userId}`, { headers: authHeaders() })
-        .then((r) => r.ok ? r.json() : { trades: [] })
+      fetch(`/api/paper-trades/${graph.id}`, { headers: authHeaders() })
+        .then((r) => {
+          if (!r.ok) return { trades: [] };
+          return r.json();
+        })
         .then((data: { trades: PaperTrade[] }) => {
           if (get().strategyId === graph.id) {
             const trades = data.trades || [];
@@ -530,8 +532,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         })
         .catch(() => { });
 
-      fetch(`/api/paper-trades/${graph.id}/logs?userId=${userId}`, { headers: authHeaders() })
-        .then((r) => r.ok ? r.json() : { logs: [] })
+      fetch(`/api/paper-trades/${graph.id}/logs`, { headers: authHeaders() })
+        .then((r) => {
+          if (!r.ok) return { logs: [] };
+          return r.json();
+        })
         .then((data: { logs: ExecutionLog[] }) => {
           if (get().strategyId === graph.id) {
             set({ logs: (data.logs || []).slice(-100) });
@@ -1050,9 +1055,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   clearLogs: () => {
     set({ logs: [] });
-    const userId = getUserId();
     const strategyId = get().strategyId;
-    fetch(`/api/paper-trades/${strategyId}/logs?userId=${userId}`, {
+    fetch(`/api/paper-trades/${strategyId}/logs`, {
       method: "DELETE",
       headers: authHeaders(),
     }).catch(() => { });
@@ -1076,10 +1080,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   clearTrades: async () => {
     const sid = get().strategyId;
-    const userId = getUserId();
     set({ trades: [], positions: [] });
     try {
-      await fetch(`/api/paper-trades/${sid}?userId=${userId}`, {
+      await fetch(`/api/paper-trades/${sid}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
