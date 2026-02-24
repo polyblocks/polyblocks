@@ -1,5 +1,5 @@
 /**
- * AI Strategy Builder route — uses Google Vertex AI (Gemini 1.5 Pro) to generate strategy
+ * AI Strategy Builder route — uses Google Vertex AI (Gemini 2.0 Flash) to generate strategy
  */
 
 import type { FastifyInstance } from "fastify";
@@ -226,9 +226,9 @@ export async function registerAiRoutes(app: FastifyInstance) {
       return reply.code(500).send({ error: "AI service not configured. Please contact support." });
     }
 
-    // ── Call Google Vertex AI (Gemini 1.5 Pro) ───────────────────────────────
+    // ── Call Google Vertex AI (Gemini 2.0 Flash) ───────────────────────────────
     try {
-      const vertexRes = await fetch(VERTEX_AI_ENDPOINT, {
+      const vertexRes = await fetch(`${VERTEX_AI_ENDPOINT}:generateContent`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -245,6 +245,24 @@ export async function registerAiRoutes(app: FastifyInstance) {
             maxOutputTokens: 4096,
             responseMimeType: "application/json",
           },
+          safetySettings: [
+            {
+              category: "HARM_CATEGORY_HARASSMENT",
+              threshold: "BLOCK_NONE"
+            },
+            {
+              category: "HARM_CATEGORY_HATE_SPEECH",
+              threshold: "BLOCK_NONE"
+            },
+            {
+              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              threshold: "BLOCK_NONE"
+            },
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_NONE"
+            }
+          ]
         }),
       });
 
