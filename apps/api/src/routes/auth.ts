@@ -633,7 +633,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
       // 2. Look for USDC Transfer log
       const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
-      const PAYMENT_WALLET = "0x06f344E8805Ce78e62699b46e3d8BC78a6c1a35f";
+      const PAYMENT_WALLET = "0xf2Ff454e34F15F6B4569bE5571B95B263eBE570B";
       const EXPECTED_AMOUNT = ethers.utils.parseUnits("5", 6); // 5 USDC (6 decimals)
       const TRANSFER_TOPIC = ethers.utils.id("Transfer(address,address,uint256)");
       
