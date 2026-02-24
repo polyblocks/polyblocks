@@ -679,42 +679,77 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                   const prevTrades = get().trades;
                   const allTrades = [...newTrades, ...prevTrades].slice(0, 500);
 
-                  // Build positions from all trades
-                  const posMap = new Map<string, PaperPosition>();
-                  for (const t of [...allTrades].reverse()) {
-                    const key = `${t.marketConditionId}_${t.tokenId}`;
-                    const existing = posMap.get(key);
-                    const sizeChange = t.side === "BUY" ? t.size : -t.size;
+                  // Build positions from all trades with proper FIFO accounting
+                  const posMap = new Map<string, {
+                    strategyId: string;
+                    marketConditionId: string;
+                    tokenId: string;
+                    side: "YES" | "NO";
+                    size: number;
+                    avgEntryPrice: number;
+                    currentPrice: number;
+                    unrealizedPnl: number;
+                    openedAt: string;
+                    totalCost: number;
+                  }>();
 
-                    if (existing) {
-                      const newSize = existing.size + sizeChange;
-                      if (Math.abs(newSize) < 0.001) {
-                        posMap.delete(key);
+                  for (const t of [...allTrades].sort((a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime())) {
+                    const key = `${t.marketConditionId}_${t.tokenId}`;
+                    const isBuy = t.side === "BUY";
+                    const existing = posMap.get(key);
+
+                    if (isBuy) {
+                      if (!existing) {
+                        posMap.set(key, {
+                          strategyId: t.strategyId,
+                          marketConditionId: t.marketConditionId,
+                          tokenId: t.tokenId,
+                          side: "YES",
+                          size: t.size,
+                          avgEntryPrice: t.price,
+                          currentPrice: t.price,
+                          unrealizedPnl: 0,
+                          openedAt: t.executedAt,
+                          totalCost: t.price * t.size,
+                        });
                       } else {
-                        if (sizeChange > 0) {
-                          existing.avgEntryPrice =
-                            (existing.avgEntryPrice * existing.size + t.price * sizeChange) /
-                            (existing.size + sizeChange);
-                        }
+                        const newTotalCost = existing.totalCost + (t.price * t.size);
+                        const newSize = existing.size + t.size;
+                        existing.avgEntryPrice = newSize > 0 ? newTotalCost / newSize : 0;
                         existing.size = newSize;
+                        existing.totalCost = newTotalCost;
+                        existing.openedAt = existing.openedAt;
                       }
-                    } else if (sizeChange > 0) {
-                      posMap.set(key, {
-                        strategyId: t.strategyId,
-                        marketConditionId: t.marketConditionId,
-                        tokenId: t.tokenId,
-                        side: t.side === "BUY" ? "YES" : "NO",
-                        size: sizeChange,
-                        avgEntryPrice: t.price,
-                        currentPrice: t.price,
-                        unrealizedPnl: 0,
-                        openedAt: t.executedAt,
-                      });
+                    } else {
+                      if (existing) {
+                        const sellValue = t.price * t.size;
+                        const costBasis = existing.avgEntryPrice * t.size;
+                        const realizedPnl = sellValue - costBasis;
+                        
+                        existing.size = Math.max(0, existing.size - t.size);
+                        existing.totalCost = Math.max(0, existing.totalCost - costBasis);
+                        
+                        if (existing.size <= 0.001) {
+                          posMap.delete(key);
+                        }
+                      }
                     }
                   }
 
-                  const positionsArr = Array.from(posMap.values());
+                  const positionsArr = Array.from(posMap.values()).map(p => ({
+                    strategyId: p.strategyId,
+                    marketConditionId: p.marketConditionId,
+                    tokenId: p.tokenId,
+                    side: p.side,
+                    size: p.size,
+                    avgEntryPrice: p.avgEntryPrice,
+                    currentPrice: p.currentPrice,
+                    unrealizedPnl: p.unrealizedPnl,
+                    openedAt: p.openedAt,
+                  }));
+
                   await updatePositionPrices(positionsArr);
+                  
                   if (get().strategyId === capturedStrategyId) {
                     set({
                       trades: allTrades,
@@ -722,7 +757,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                       showTradesPanel: true,
                       bottomTab: "trades",
                     });
-                    // Persist trades to MongoDB
                     fetch(`/api/paper-trades/${capturedStrategyId}`, {
                       method: "POST",
                       headers: authHeaders(),

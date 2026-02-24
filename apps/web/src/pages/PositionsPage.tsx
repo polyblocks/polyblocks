@@ -524,41 +524,30 @@ export default function PositionsPage() {
       const builtPositions: EnrichedPaperPosition[] = [];
 
       lotsMap.forEach((lots, key) => {
-        // key is conditionId_tokenId
         const [conditionId, tokenId] = key.split("_");
-        // Find a trade to get metadata? Or fetch it later? 
-        // StrategyId is needed.
-        // We can find the latest trade for this key to guess strategyId, or store it in lot?
-        // Simplification: use the first trade's metadata.
         const relatedTrade = allTrades.find(t => `${t.marketConditionId}_${t.tokenId}` === key);
         if (!relatedTrade) return;
 
-        lots.forEach(lot => {
-          builtPositions.push({
-            strategyId: relatedTrade.strategyId,
-            marketConditionId: conditionId,
-            tokenId: tokenId,
-            side: "YES", // Assumption? No, logic missing for side?
-            // Trade doesn't specify YES/NO outcome explicitly in PaperTrade interface usually?
-            // Wait, PaperTrade has 'tokenId'.
-            // Polymarket: TokenId determines side (YES/NO).
-            // We need to resolve TokenId to Side.
-            // Existing logic: "side: t.side === 'BUY' ? 'YES' : 'NO'" was flawed if t.side was trade side.
-            // Actually existing logic used: posMap.set(..., side: t.side === "BUY" ? "YES" : "NO"). 
-            // This implies PaperTrade.side meant "outcome" bought?
-            // Let's check PaperTrade definition.
-            // It usually has 'side' as 'BUY'/'SELL'.
-            // We need to fetch Side from TokenId or store it.
-            // For now, let's assume 'YES' if we don't have better info, or rely on enrichment.
-            size: lot.size,
-            avgEntryPrice: lot.price,
-            currentPrice: lot.price, // Will update
-            unrealizedPnl: 0,
-            openedAt: lot.timestamp,
-            active: true,
-            closed: false
-          } as EnrichedPaperPosition);
-        });
+        const totalSize = lots.reduce((sum, lot) => sum + lot.size, 0);
+        if (totalSize <= 0.001) return;
+
+        const totalCost = lots.reduce((sum, lot) => sum + (lot.price * lot.size), 0);
+        const avgEntryPrice = totalSize > 0 ? totalCost / totalSize : 0;
+        const firstBuyTime = lots.map(l => l.timestamp).sort()[0];
+
+        builtPositions.push({
+          strategyId: relatedTrade.strategyId,
+          marketConditionId: conditionId,
+          tokenId: tokenId,
+          side: "YES",
+          size: totalSize,
+          avgEntryPrice,
+          currentPrice: avgEntryPrice,
+          unrealizedPnl: 0,
+          openedAt: firstBuyTime || relatedTrade.executedAt,
+          active: true,
+          closed: false
+        } as EnrichedPaperPosition);
       });
 
       // Fetch current prices & Metadata
@@ -728,6 +717,8 @@ export default function PositionsPage() {
   useEffect(() => {
     if (mode === "paper" && !paperMaintenance) {
       fetchPaperData();
+      const interval = setInterval(() => fetchPaperData({ silent: true }), 10000);
+      return () => clearInterval(interval);
     }
   }, [mode, paperMaintenance, fetchPaperData]);
 
