@@ -168,7 +168,7 @@ export const useCopyTradingStore = create<CopyTradingState>((set, get) => {
 
   return {
     targetAddress: persisted?.targetAddress || "",
-    intervalSec: persisted?.intervalSec || 30,
+    intervalSec: persisted?.intervalSec || 1,
     maxSize: persisted?.maxSize || 50,
     sizePercent: persisted?.sizePercent || 100,
     mode: persisted?.mode || "paper",

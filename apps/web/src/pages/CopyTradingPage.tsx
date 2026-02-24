@@ -199,7 +199,7 @@ export default function CopyTradingPage() {
                 ["Auto-mirror trades", "Instantly copy whale moves"],
                 ["Duplicate prevention", "Never re-take the same trade"],
                 ["Size capping", "Set max order size limits"],
-                ["Real-time logs", "Full trade history & status"],
+                ["Live activity logs", "Full trade history & status"],
               ].map(([title, desc]) => (
                 <div key={title} style={{ textAlign: "left" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -237,7 +237,7 @@ export default function CopyTradingPage() {
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Copy Trading</h1>
           <p style={{ color: "var(--pb-text-muted)", fontSize: 13, margin: 0 }}>
-            Mirror trades from any Polymarket wallet in real time
+            Mirror trades from any Polymarket wallet every second
           </p>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
@@ -381,7 +381,7 @@ export default function CopyTradingPage() {
               <label style={{ fontSize: 12, fontWeight: 600, color: "var(--pb-text-secondary)", marginBottom: 6, display: "block" }}>
                 <Clock size={12} style={{ marginRight: 4 }} /> Check Interval (seconds)
               </label>
-              <Input type="number" min={10} max={300} value={intervalSec} onChange={(e) => setIntervalSec(Number(e.target.value))} disabled={running} />
+              <Input type="number" min={1} max={300} value={intervalSec} onChange={(e) => setIntervalSec(Number(e.target.value))} disabled={running} />
             </div>
 
             <div style={{ background: "var(--pb-surface-2)", border: "1px solid var(--pb-border)", borderRadius: 12, padding: 20 }}>
