@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, FlaskConical, Mail, MessageCircle, CheckCircle, Zap, X, Briefcase, Radio, Loader2, Square } from "lucide-react";
+import { LayoutDashboard, Workflow, BookTemplate, Library, Settings, LogOut, Crown, Users, Mail, MessageCircle, CheckCircle, Zap, X, Briefcase, Radio, Loader2, Square } from "lucide-react";
 import { useAuthStore } from "../stores/authStore";
 import { useCopyTradingStore } from "../stores/copyTradingStore";
 

@@ -5,7 +5,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEditorStore } from "../stores/editorStore";
 import { useAuthStore } from "../stores/authStore";
-import { Plus, Workflow, BookTemplate, Library, Mail, Briefcase, BarChart3, Users } from "lucide-react";
+import { Plus, Workflow, BookTemplate, Library, Mail, Briefcase, Users } from "lucide-react";
 
 export default function DashboardPage() {
   const navigate = useNavigate();

@@ -724,7 +724,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                       if (existing) {
                         const sellValue = t.price * t.size;
                         const costBasis = existing.avgEntryPrice * t.size;
-                        const realizedPnl = sellValue - costBasis;
                         
                         existing.size = Math.max(0, existing.size - t.size);
                         existing.totalCost = Math.max(0, existing.totalCost - costBasis);
