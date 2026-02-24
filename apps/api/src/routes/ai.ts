@@ -245,10 +245,11 @@ IMPORTANT RULES:
 // ── Route registration ───────────────────────────────────────────────────
 
 export async function registerAiRoutes(app: FastifyInstance) {
+  const VERTEX_AI_PROJECT_ID = process.env.VERTEX_AI_PROJECT_ID || "";
   const VERTEX_AI_KEY = process.env.VERTEX_AI_KEY || "";
 
-  if (!VERTEX_AI_KEY) {
-    app.log.warn("VERTEX_AI_KEY not set — AI builder will return errors");
+  if (!VERTEX_AI_KEY || !VERTEX_AI_PROJECT_ID) {
+    app.log.warn("VERTEX_AI_PROJECT_ID / VERTEX_AI_KEY not set — AI builder will return errors");
   }
 
   /**
@@ -299,18 +300,20 @@ export async function registerAiRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Prompt is too long (max 2000 characters)" });
     }
 
-    if (!VERTEX_AI_KEY) {
+    if (!VERTEX_AI_KEY || !VERTEX_AI_PROJECT_ID) {
       return reply.code(500).send({ error: "AI service not configured. Please contact support." });
     }
 
-    // ── Call Google Vertex AI Global Endpoint (Gemini 2.5 Flash) ─────────────
+    // ── Call Google Vertex AI (Gemini 2.5 Flash) ────────────────────────────
+    // Endpoint format: projects/{PROJECT}/locations/{LOCATION}/publishers/google/models/{MODEL}:generateContent
     try {
-      const globalEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+      const vertexEndpoint = `https://us-central1-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent`;
       
-      const vertexRes = await fetch(`${globalEndpoint}?key=${VERTEX_AI_KEY}`, {
+      const vertexRes = await fetch(vertexEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${VERTEX_AI_KEY}`,
         },
         body: JSON.stringify({
           contents: [{
