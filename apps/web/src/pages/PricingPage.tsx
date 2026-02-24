@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const PAYMENT_WALLET = "0x06f344E8805Ce78e62699b46e3d8BC78a6c1a35f";
+const PAYMENT_WALLET = "0xE20f2d3DA42031719b831B82483FAb4d35f58c72";
 const PAYMENT_AMOUNT = "5"; // $5 USDC
 const CHAIN = "Polygon";
 const CHAIN_ID_HEX = "0x89"; // 137 in hex (Polygon mainnet)
