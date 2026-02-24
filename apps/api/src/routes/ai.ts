@@ -1,6 +1,5 @@
 /**
- * AI Strategy Builder route — uses Azure OpenAI (GPT-4o) to generate strategy
- * graphs from natural language prompts. Pro-only feature.
+ * AI Strategy Builder route — uses Google Vertex AI (Gemini 1.5 Pro) to generate strategy
  */
 
 import type { FastifyInstance } from "fastify";
@@ -182,11 +181,11 @@ IMPORTANT RULES:
 // ── Route registration ───────────────────────────────────────────────────
 
 export async function registerAiRoutes(app: FastifyInstance) {
-  const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || "";
-  const AZURE_OPENAI_KEY = process.env.AZURE_OPENAI_KEY || "";
+  const VERTEX_AI_ENDPOINT = process.env.VERTEX_AI_ENDPOINT || "";
+  const VERTEX_AI_KEY = process.env.VERTEX_AI_KEY || "";
 
-  if (!AZURE_OPENAI_KEY || !AZURE_OPENAI_ENDPOINT) {
-    app.log.warn("AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_KEY not set — AI builder will return errors");
+  if (!VERTEX_AI_KEY || !VERTEX_AI_ENDPOINT) {
+    app.log.warn("VERTEX_AI_ENDPOINT / VERTEX_AI_KEY not set — AI builder will return errors");
   }
 
   /**
@@ -223,42 +222,45 @@ export async function registerAiRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Prompt is too long (max 2000 characters)" });
     }
 
-    if (!AZURE_OPENAI_KEY || !AZURE_OPENAI_ENDPOINT) {
+    if (!VERTEX_AI_KEY || !VERTEX_AI_ENDPOINT) {
       return reply.code(500).send({ error: "AI service not configured. Please contact support." });
     }
 
-    // ── Call Azure OpenAI (GPT-4o) ───────────────────────────────────────
+    // ── Call Google Vertex AI (Gemini 1.5 Pro) ───────────────────────────────
     try {
-      const azureRes = await fetch(AZURE_OPENAI_ENDPOINT, {
+      const vertexRes = await fetch(VERTEX_AI_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "api-key": AZURE_OPENAI_KEY,
+          Authorization: `Bearer ${VERTEX_AI_KEY}`,
         },
         body: JSON.stringify({
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: prompt },
-          ],
-          temperature: 0.7,
-          max_tokens: 4096,
-          response_format: { type: "json_object" },
+          contents: [{
+            parts: [{
+              text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 4096,
+            responseMimeType: "application/json",
+          },
         }),
       });
 
-      if (!azureRes.ok) {
-        const errBody = await azureRes.text();
-        app.log.error(`Azure OpenAI error ${azureRes.status}: ${errBody}`);
-        if (azureRes.status === 429) {
+      if (!vertexRes.ok) {
+        const errBody = await vertexRes.text();
+        app.log.error(`Google Vertex AI error ${vertexRes.status}: ${errBody}`);
+        if (vertexRes.status === 429) {
           return reply.code(429).send({ error: "AI rate limit reached. Please wait a moment and try again." });
         }
         return reply.code(500).send({ error: "AI generation failed. Please try again." });
       }
 
-      const azureData = await azureRes.json() as {
-        choices?: { message?: { content?: string } }[];
+      const vertexData = await vertexRes.json() as {
+        candidates?: { content?: { parts?: [{ text?: string }] } }[];
       };
-      const text = azureData.choices?.[0]?.message?.content || "";
+      const text = vertexData.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
       // Parse the JSON response
       let strategy: { name?: string; nodes?: unknown[]; edges?: unknown[] };
