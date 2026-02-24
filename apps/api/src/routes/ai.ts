@@ -375,6 +375,7 @@ export async function registerAiRoutes(app: FastifyInstance) {
         },
         body: JSON.stringify({
           contents: [{
+            role: "user",
             parts: [{
               text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`
             }]
