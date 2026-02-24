@@ -304,15 +304,35 @@ export async function registerAiRoutes(app: FastifyInstance) {
       return reply.code(500).send({ error: "AI service not configured. Please contact support." });
     }
 
-    // ── Call Google AI Studio (Gemini 2.5 Flash) ────────────────────────────
-    // Uses API Key authentication (not Bearer token)
+    // ── Call Google Vertex AI with OAuth2 Access Token ─────────────────────
+    // VERTEX_AI_KEY should be an OAuth2 access token (from gcloud auth print-access-token)
+    // or a service account JSON key content
     try {
-      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${VERTEX_AI_KEY}`;
+      const vertexEndpoint = `https://us-central1-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent`;
       
-      const vertexRes = await fetch(apiEndpoint, {
+      // Check if KEY is a JSON (service account) or a token (access token)
+      let authHeader: Record<string, string>;
+      try {
+        const keyObj = JSON.parse(VERTEX_AI_KEY);
+        // It's a service account JSON - we need to exchange it for a token
+        // For now, assume it's already a valid access token if it starts with ya29.
+        if (keyObj.client_email && keyObj.private_key) {
+          app.log.error("Service account JSON detected but token exchange not implemented. Please use access token instead.");
+          return reply.code(500).send({ error: "Service account keys require additional setup. Please use an OAuth2 access token." });
+        }
+      } catch {
+        // Not JSON, assume it's an access token
+      }
+      
+      authHeader = {
+        Authorization: `Bearer ${VERTEX_AI_KEY}`,
+      };
+      
+      const vertexRes = await fetch(vertexEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...authHeader,
         },
         body: JSON.stringify({
           contents: [{
