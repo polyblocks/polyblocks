@@ -4,6 +4,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { sessionsCol, usersCol, type DbUser } from "../db.js";
+import { createSign } from "crypto";
 
 // ── Rate limit helpers ────────────────────────────────────────────────────
 
@@ -304,18 +305,17 @@ export async function registerAiRoutes(app: FastifyInstance) {
       return reply.code(500).send({ error: "AI service not configured. Please contact support." });
     }
 
-    // ── Get OAuth2 Access Token ─────────────────────────────────────────────
-    // VERTEX_AI_KEY can be either:
-    // 1. A service account JSON key (permanent, recommended for production)
-    // 2. An OAuth2 access token (expires in 1 hour, from gcloud auth print-access-token)
-    let accessToken = VERTEX_AI_KEY;
+    // ── Get OAuth2 Access Token from Service Account ────────────────────────
+    // Use Node.js crypto to sign JWT and exchange for OAuth2 token
+    let accessToken: string;
     
     try {
       const keyObj = JSON.parse(VERTEX_AI_KEY);
-      if (keyObj.type === "service_account" && keyObj.private_key) {
-        // Exchange service account key for OAuth2 token
-        const jwt = require('jsonwebtoken');
+      
+      if (keyObj.type === "service_account" && keyObj.private_key && keyObj.client_email) {
+        // Create JWT and exchange for OAuth2 token
         const now = Math.floor(Date.now() / 1000);
+        const header = { alg: "RS256", typ: "JWT" };
         const claimSet = {
           iss: keyObj.client_email,
           sub: keyObj.client_email,
@@ -325,29 +325,42 @@ export async function registerAiRoutes(app: FastifyInstance) {
           iat: now
         };
         
-        const encodedClaim = jwt.sign(claimSet, keyObj.private_key, { algorithm: "RS256" });
+        const headerEncoded = Buffer.from(JSON.stringify(header)).toString("base64url").replace(/=+$/, "");
+        const claimEncoded = Buffer.from(JSON.stringify(claimSet)).toString("base64url").replace(/=+$/, "");
+        const toSign = `${headerEncoded}.${claimEncoded}`;
         
+        // Sign with private key using Node.js crypto
+        const sign = createSign("RSA-SHA256");
+        sign.update(toSign);
+        sign.end();
+        const signature = sign.sign(keyObj.private_key, "base64url");
+        
+        const jwt = `${toSign}.${signature}`;
+        
+        // Exchange JWT for OAuth2 access token
         const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({
             grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            assertion: encodedClaim
+            assertion: jwt
           })
         });
         
         const tokenData = await tokenRes.json();
         if (!tokenData.access_token) {
-          throw new Error("Failed to get access token from service account");
+          throw new Error(`Token exchange failed: ${JSON.stringify(tokenData)}`);
         }
+        
         accessToken = tokenData.access_token;
         app.log.info("Successfully exchanged service account key for OAuth2 token");
+      } else {
+        // Not a service account, assume it's already an access token
+        accessToken = VERTEX_AI_KEY;
       }
     } catch (e: any) {
-      // Not a valid service account JSON, assume it's already an access token
-      if (!VERTEX_AI_KEY.startsWith("ya29.")) {
-        app.log.warn("VERTEX_AI_KEY format unclear, attempting to use as-is");
-      }
+      app.log.error(`Failed to process VERTEX_AI_KEY: ${e.message}`);
+      return reply.code(500).send({ error: "Invalid authentication credentials" });
     }
     
     // ── Call Google Vertex AI with OAuth2 Access Token ─────────────────────
