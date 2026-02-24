@@ -304,16 +304,15 @@ export async function registerAiRoutes(app: FastifyInstance) {
       return reply.code(500).send({ error: "AI service not configured. Please contact support." });
     }
 
-    // ── Call Google Vertex AI (Gemini 2.5 Flash) ────────────────────────────
-    // Endpoint format: projects/{PROJECT}/locations/{LOCATION}/publishers/google/models/{MODEL}:generateContent
+    // ── Call Google AI Studio (Gemini 2.5 Flash) ────────────────────────────
+    // Uses API Key authentication (not Bearer token)
     try {
-      const vertexEndpoint = `https://us-central1-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent`;
+      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${VERTEX_AI_KEY}`;
       
-      const vertexRes = await fetch(vertexEndpoint, {
+      const vertexRes = await fetch(apiEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${VERTEX_AI_KEY}`,
         },
         body: JSON.stringify({
           contents: [{
