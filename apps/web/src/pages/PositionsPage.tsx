@@ -227,7 +227,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function PositionsPage() {
-  const paperMaintenance = false;
+  const paperMaintenance = true;
   const [mode, setMode] = useState<"live" | "paper">("live");
   const [positions, setPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
