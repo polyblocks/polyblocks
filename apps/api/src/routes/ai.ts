@@ -304,35 +304,61 @@ export async function registerAiRoutes(app: FastifyInstance) {
       return reply.code(500).send({ error: "AI service not configured. Please contact support." });
     }
 
+    // ── Get OAuth2 Access Token ─────────────────────────────────────────────
+    // VERTEX_AI_KEY can be either:
+    // 1. A service account JSON key (permanent, recommended for production)
+    // 2. An OAuth2 access token (expires in 1 hour, from gcloud auth print-access-token)
+    let accessToken = VERTEX_AI_KEY;
+    
+    try {
+      const keyObj = JSON.parse(VERTEX_AI_KEY);
+      if (keyObj.type === "service_account" && keyObj.private_key) {
+        // Exchange service account key for OAuth2 token
+        const jwt = require('jsonwebtoken');
+        const now = Math.floor(Date.now() / 1000);
+        const claimSet = {
+          iss: keyObj.client_email,
+          sub: keyObj.client_email,
+          scope: "https://www.googleapis.com/auth/cloud-platform",
+          aud: "https://oauth2.googleapis.com/token",
+          exp: now + 3600,
+          iat: now
+        };
+        
+        const encodedClaim = jwt.sign(claimSet, keyObj.private_key, { algorithm: "RS256" });
+        
+        const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            assertion: encodedClaim
+          })
+        });
+        
+        const tokenData = await tokenRes.json();
+        if (!tokenData.access_token) {
+          throw new Error("Failed to get access token from service account");
+        }
+        accessToken = tokenData.access_token;
+        app.log.info("Successfully exchanged service account key for OAuth2 token");
+      }
+    } catch (e: any) {
+      // Not a valid service account JSON, assume it's already an access token
+      if (!VERTEX_AI_KEY.startsWith("ya29.")) {
+        app.log.warn("VERTEX_AI_KEY format unclear, attempting to use as-is");
+      }
+    }
+    
     // ── Call Google Vertex AI with OAuth2 Access Token ─────────────────────
-    // VERTEX_AI_KEY should be an OAuth2 access token (from gcloud auth print-access-token)
-    // or a service account JSON key content
     try {
       const vertexEndpoint = `https://us-central1-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent`;
-      
-      // Check if KEY is a JSON (service account) or a token (access token)
-      let authHeader: Record<string, string>;
-      try {
-        const keyObj = JSON.parse(VERTEX_AI_KEY);
-        // It's a service account JSON - we need to exchange it for a token
-        // For now, assume it's already a valid access token if it starts with ya29.
-        if (keyObj.client_email && keyObj.private_key) {
-          app.log.error("Service account JSON detected but token exchange not implemented. Please use access token instead.");
-          return reply.code(500).send({ error: "Service account keys require additional setup. Please use an OAuth2 access token." });
-        }
-      } catch {
-        // Not JSON, assume it's an access token
-      }
-      
-      authHeader = {
-        Authorization: `Bearer ${VERTEX_AI_KEY}`,
-      };
       
       const vertexRes = await fetch(vertexEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...authHeader,
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           contents: [{
