@@ -826,7 +826,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Show detailed validation errors
       const errorMessages = issues
         .filter((i) => i.severity === "error")
-        .map((i, idx) => `${idx + 1}. ${i.message}${i.nodeId ? ` (Block: ${get().nodes.find(n => n.id === i.nodeId)?.config?.label || i.nodeId})` : ""}`)
+        .map((i, idx) => {
+          const nodeName = i.nodeId ? (() => {
+            const node = get().nodes.find(n => n.id === i.nodeId);
+            return node?.data?.label || node?.data?.type || i.nodeId;
+          })() : undefined;
+          return `${idx + 1}. ${i.message}${nodeName ? ` (Block: ${nodeName})` : ""}`;
+        })
         .join("\n");
       set({ runError: `Validation failed:\n\n${errorMessages}` });
       return;
@@ -929,7 +935,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Show detailed validation errors
       const errorMessages = issues
         .filter((i) => i.severity === "error")
-        .map((i, idx) => `${idx + 1}. ${i.message}${i.nodeId ? ` (Block: ${get().nodes.find(n => n.id === i.nodeId)?.config?.label || i.nodeId})` : ""}`)
+        .map((i, idx) => {
+          const nodeName = i.nodeId ? (() => {
+            const node = get().nodes.find(n => n.id === i.nodeId);
+            return node?.data?.label || node?.data?.type || i.nodeId;
+          })() : undefined;
+          return `${idx + 1}. ${i.message}${nodeName ? ` (Block: ${nodeName})` : ""}`;
+        })
         .join("\n");
       set({ runError: `Cannot start strategy:\n\n${errorMessages}` });
       return;
