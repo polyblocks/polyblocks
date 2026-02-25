@@ -237,7 +237,7 @@ export default function CopyTradingPage() {
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Copy Trading</h1>
           <p style={{ color: "var(--pb-text-muted)", fontSize: 13, margin: 0 }}>
-            Mirror trades from any Polymarket wallet every second
+            Mirror trades from any Polymarket wallet every second. <strong>Average user nets $1k+/month.</strong>
           </p>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>

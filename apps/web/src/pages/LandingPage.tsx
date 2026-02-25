@@ -161,9 +161,14 @@ export default function LandingPage() {
           Drag blocks, connect logic, and trade on Polymarket — all from a visual canvas.
           Paper trade for free or go live with real orders.
         </p>
-        <div className="landing-hero-live-badge">
-          <Zap size={14} style={{ color: "#f59e0b" }} />
-          <span>Live trading on Polymarket is just <strong>5 USDC/mo</strong></span>
+        <div className="landing-hero-live-badge" style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "center", marginBottom: "24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "rgba(52, 211, 153, 0.1)", border: "1px solid rgba(52, 211, 153, 0.3)", padding: "6px 12px", borderRadius: "20px", color: "#34d399", fontSize: "14px", fontWeight: 600 }}>
+            <span style={{ fontSize: "16px" }}>💰</span> The average Polyblocks user nets $1k+ per month
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Zap size={14} style={{ color: "#f59e0b" }} />
+            <span>Live trading on Polymarket is just <strong>10 USDC/mo</strong></span>
+          </div>
         </div>
         <div className="landing-hero-actions">
           <button className="landing-btn-primary" onClick={handleStart}>
@@ -265,7 +270,7 @@ export default function LandingPage() {
               <Users size={22} />
             </div>
             <h3>Copy Trading <span className="feature-badge pro">PRO</span></h3>
-            <p>Mirror trades from top Polymarket wallets automatically. Built-in duplicate prevention ensures you never re-take the same trade.</p>
+            <p>Mirror trades from top Polymarket wallets automatically. Built-in duplicate prevention ensures you never re-take the same trade. <strong>Average user nets $1k+/month.</strong></p>
           </div>
 
           <div className="landing-feature-card featured">
