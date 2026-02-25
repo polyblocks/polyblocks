@@ -198,8 +198,26 @@ class StrategyScheduler {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      entry.lastError = msg;
+      const stack = err instanceof Error ? err.stack : undefined;
+      entry.lastError = stack || msg;
       console.error(`[Scheduler] Error running strategy ${entry.graph.id}:`, msg);
+      if (stack) {
+        console.error(`[Scheduler] Stack trace:`, stack);
+      }
+      
+      // Create an error log entry
+      const errorLog: ExecutionLog = {
+        id: `error_${nanoid()}`,
+        runId,
+        strategyId: entry.graph.id,
+        userId: entry.graph.userId,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        nodeResults: [],
+        error: stack || msg,
+      };
+      entry.recentLogs.unshift(errorLog);
+      if (entry.recentLogs.length > 20) entry.recentLogs.length = 20;
     } finally {
       entry.isExecuting = false;
     }

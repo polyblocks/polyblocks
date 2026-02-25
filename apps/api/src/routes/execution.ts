@@ -93,39 +93,45 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
   });
 
   // ── Start a strategy as a background scheduled job ────────────────────────
-  app.post("/schedule/start", async (request) => {
-    const body = request.body as { mode?: string; intervalMs?: number } & StrategyGraph;
-    const mode = body.mode === "live" ? "live" : "paper";
-    const graph = body as StrategyGraph;
+  app.post("/schedule/start", async (request, reply) => {
+    try {
+      const body = request.body as { mode?: string; intervalMs?: number } & StrategyGraph;
+      const mode = body.mode === "live" ? "live" : "paper";
+      const graph = body as StrategyGraph;
 
-    // Validate live mode has credentials
-    if (mode === "live") {
-      const creds = await getCredentials(graph.userId);
-      if (!creds.isConfigured) {
-        return { success: false, error: "No trading credentials configured." };
+      // Validate live mode has credentials
+      if (mode === "live") {
+        const creds = await getCredentials(graph.userId);
+        if (!creds.isConfigured) {
+          return { success: false, error: "No trading credentials configured. Please add your API keys in Settings." };
+        }
       }
-    }
 
-    // ── Enforce: only one strategy may run at a time ────────────────────
-    const existingId = scheduler.getRunningStrategyId();
-    if (existingId && existingId !== graph.id) {
-      return {
-        success: false,
-        error: `Another strategy is already running (${existingId}). Stop it before starting a new one.`,
-      };
-    }
-
-    // Determine interval from graph
-    let intervalMs = body.intervalMs || 15_000;
-    for (const node of graph.nodes) {
-      if (node.type === BlockType.IntervalTrigger && node.config.intervalMs) {
-        intervalMs = Math.max(5000, Number(node.config.intervalMs));
-        break;
+      // ── Enforce: only one strategy may run at a time ────────────────────
+      const existingId = scheduler.getRunningStrategyId();
+      if (existingId && existingId !== graph.id) {
+        return {
+          success: false,
+          error: `Another strategy is already running: "${existingId}". Stop it before starting a new one.`,
+        };
       }
-    }
 
-    scheduler.start(graph, intervalMs, mode as "paper" | "live");
-    return { success: true, strategyId: graph.id, mode, intervalMs };
+      // Determine interval from graph
+      let intervalMs = body.intervalMs || 15_000;
+      for (const node of graph.nodes) {
+        if (node.type === BlockType.IntervalTrigger && node.config.intervalMs) {
+          intervalMs = Math.max(5000, Number(node.config.intervalMs));
+          break;
+        }
+      }
+
+      scheduler.start(graph, intervalMs, mode as "paper" | "live");
+      return { success: true, strategyId: graph.id, mode, intervalMs };
+    } catch (err) {
+      request.log.error(err, "Failed to start strategy");
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: `Failed to start strategy: ${msg}` };
+    }
   });
 
   // ── Stop a scheduled strategy ─────────────────────────────────────────────
