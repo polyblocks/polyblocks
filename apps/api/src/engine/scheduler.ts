@@ -5,7 +5,8 @@
  * navigates away from the editor. Supports both paper and live modes.
  */
 
-import type { StrategyGraph, ExecutionLog, ExecutionStatus } from "@polyblocks/types";
+import type { StrategyGraph, ExecutionLog } from "@polyblocks/types";
+import { ExecutionStatus } from "@polyblocks/types";
 import { evaluateGraph } from "@polyblocks/engine-core";
 import type { ExecutionContext } from "@polyblocks/engine-core";
 import { createPaperHandlers } from "./paperHandlers.js";
