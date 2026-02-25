@@ -768,7 +768,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
 
         if (data.lastError) {
-          set({ runError: data.lastError });
+          // Parse and format the error message nicely
+          let formattedError = data.lastError;
+          try {
+            const parsed = JSON.parse(data.lastError);
+            if (parsed.message) formattedError = parsed.message;
+            if (parsed.details) formattedError += `: ${parsed.details}`;
+          } catch {
+            // Not JSON, use as-is
+          }
+          set({ runError: `Execution error: ${formattedError}` });
         }
 
         // Wait before next poll
@@ -814,7 +823,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const issues = get().validate();
     const hasErrors = issues.some((i) => i.severity === "error");
     if (hasErrors) {
-      set({ runError: "Fix validation errors before firing." });
+      // Show detailed validation errors
+      const errorMessages = issues
+        .filter((i) => i.severity === "error")
+        .map((i, idx) => `${idx + 1}. ${i.message}${i.nodeId ? ` (Block: ${get().nodes.find(n => n.id === i.nodeId)?.config?.label || i.nodeId})` : ""}`)
+        .join("\n");
+      set({ runError: `Validation failed:\n\n${errorMessages}` });
       return;
     }
 
@@ -829,7 +843,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`API error ${res.status}: ${text}`);
+        let errorMessage = `API error ${res.status}`;
+        try {
+          const json = JSON.parse(text);
+          if (json.error) errorMessage = json.error;
+        } catch {
+          if (text) errorMessage += `: ${text}`;
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await res.json() as { result: ExecutionLog; logs: Array<{ nodeId: string; message: string; data?: unknown }> };
@@ -905,7 +926,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const issues = get().validate();
     const hasErrors = issues.some((i) => i.severity === "error");
     if (hasErrors) {
-      set({ runError: "Fix validation errors before running." });
+      // Show detailed validation errors
+      const errorMessages = issues
+        .filter((i) => i.severity === "error")
+        .map((i, idx) => `${idx + 1}. ${i.message}${i.nodeId ? ` (Block: ${get().nodes.find(n => n.id === i.nodeId)?.config?.label || i.nodeId})` : ""}`)
+        .join("\n");
+      set({ runError: `Cannot start strategy:\n\n${errorMessages}` });
       return;
     }
 
