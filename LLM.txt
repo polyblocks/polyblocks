@@ -1,0 +1,274 @@
+# PolyBlocks | No‑Code Polymarket Strategy Builder
+
+> A comprehensive no-code platform for building, backtesting, paper trading, and automating Polymarket trading strategies using visual blocks and AI assistance.
+
+PolyBlocks provides a visual, no-code environment for traders to develop complex strategies on Polymarket. It integrates real-time data, AI-powered strategy generation, and automated execution, enabling both beginners and advanced users to trade smarter without programming knowledge.
+
+## Core Content
+
+### Strategy Building and Automation
+- Drag-and-drop strategy builder
+- Visual canvas with animated data-flow
+- AI-driven strategy creation from plain English prompts (Gemini 2.5 Flash)
+- Connect logic, triggers, conditions, and actions visually
+- Automate strategies for 24/7 trading
+- Backtest and paper trade safely before live execution
+- Live trading via CLOB API integration
+
+### Block Types and Functionalities
+- 31+ block types including:
+  - **Trigger Blocks**: Interval, Price Cross, Manual, Event Resolution
+  - **Market Blocks**: Market Selector, Recent Crypto Market, User Activity (copy trading)
+  - **Data Blocks**: Price Data, Spread Data, Orderbook, Price History, Multi-Market Compare, Custom API
+  - **Logic Blocks**: AND/OR/NOT Gates, IF/ELSE, Threshold Compare, Cooldown, Math Operations
+  - **Risk Blocks**: Max Exposure, Daily Loss Limit, Kill Switch
+  - **Action Blocks**: Place Order, Limit Order, Cancel Order, Close Position, Notification
+  - **Analysis Blocks**: Position Sizer (Kelly), Probability Calc, Expected Value, Edge Calc
+  - **Utility Blocks**: Debug Log, Delay, Note
+- External API integration for custom data sources (weather, crypto, news, etc.)
+- Advanced logic systems for multi-market comparison and complex decision trees
+
+### Trading Features
+- Paper trading with realistic simulation
+- Real order execution on Polymarket via CLOB API
+- Copy trading from top wallets with duplicate prevention
+- Portfolio monitoring and position tracking with live PnL
+- Auto-execution with full wallet control
+- Rate-limited AI strategy generation (30 requests/day/user)
+
+## Tech Stack
+
+### Frontend
+- React 19 with TypeScript
+- React Flow for visual node-based editor
+- Zustand for state management
+- Vite for build tooling
+- Tailwind-inspired custom design system
+
+### Backend
+- Fastify 5.x REST API
+- MongoDB for data persistence
+- In-memory scheduler for strategy execution
+- Node.js 22.x runtime
+
+### AI Integration
+- Google Vertex AI with Gemini 2.5 Flash
+- JWT-based service account authentication
+- Automatic OAuth2 token exchange
+- Structured JSON output for strategy generation
+
+### APIs Integrated
+- **Polymarket CLOB API**: Order placement, cancellation, orderbook access
+- **Polymarket Gamma API**: Market discovery, event data
+- **Polymarket Data API**: Historical trades, positions
+- **Google Vertex AI**: AI strategy generation
+- **Custom REST APIs**: External data sources via Custom API block
+
+## Project Structure
+
+```
+polyblocks/
+├── apps/
+│   ├── api/              # Fastify backend server
+│   │   ├── src/
+│   │   │   ├── routes/   # API endpoints (auth, execution, paper-trades, ai, etc.)
+│   │   │   ├── engine/   # Strategy scheduler, paper/live handlers
+│   │   │   ├── db.ts     # MongoDB connection
+│   │   │   └── server.ts # Entry point
+│   │   └── package.json
+│   └── web/              # React frontend
+│       ├── src/
+│       │   ├── components/  # UI components (editor, panels, nodes)
+│       │   ├── pages/       # Route pages (Editor, Dashboard, Settings)
+│       │   ├── stores/      # Zustand stores (editor, auth, copy-trading)
+│       │   └── App.tsx      # Main app component
+│       └── package.json
+├── packages/
+│   ├── types/          # Shared TypeScript types and block registry
+│   ├── engine-core/    # Strategy graph evaluation engine
+│   └── ui/             # Shared UI components
+└── test/               # End-to-end tests
+```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `apps/api/src/routes/ai.ts` | AI strategy generation with Gemini 2.5 Flash |
+| `apps/api/src/routes/execution.ts` | Strategy execution and scheduling |
+| `apps/api/src/routes/paperTrades.ts` | Paper trading endpoints with rate limiting |
+| `apps/api/src/engine/scheduler.ts` | Background strategy scheduler |
+| `apps/web/src/stores/editorStore.ts` | Editor state, validation, execution logic |
+| `apps/web/src/pages/EditorPage.tsx` | Main strategy builder canvas |
+| `packages/engine-core/src/validator.ts` | Strategy graph validation |
+| `packages/types/src/types.ts` | Core type definitions |
+
+## Development
+
+### Prerequisites
+- Node.js 22.x
+- pnpm 9.15.0
+- MongoDB instance
+- Google Cloud project with Vertex AI enabled
+
+### Setup
+```bash
+# Install dependencies
+pnpm install
+
+# Start development servers
+pnpm dev
+
+# Build all packages
+pnpm build
+
+# Run tests
+pnpm test
+```
+
+### Environment Variables
+```bash
+# Required
+MONGODB_URI=mongodb://localhost:27017/polyblocks
+GOOGLE_CLIENT_ID=your-google-oauth-client-id
+GOOGLE_CLIENT_SECRET=your-google-oauth-secret
+FRONTEND_URL=http://localhost:5173
+
+# AI Features
+VERTEX_AI_PROJECT_ID=your-gcp-project-id
+VERTEX_AI_KEY=your-service-account-json-or-access-token
+
+# Email (optional)
+SMTP_HOST=smtp.example.com
+SMTP_USER=user@example.com
+SMTP_PASS=password
+
+# Trading (for live mode)
+POLYMARKET_API_KEY=your-clob-api-key
+POLYMARKET_API_SECRET=your-clob-api-secret
+POLYMARKET_PASSPHRASE=your-clob-passphrase
+```
+
+## Deployment
+
+### Heroku Deployment
+```bash
+# Set environment variables
+heroku config:set MONGODB_URI=...
+heroku config:set GOOGLE_CLIENT_ID=...
+heroku config:set GOOGLE_CLIENT_SECRET=...
+heroku config:set FRONTEND_URL=https://your-app.herokuapp.com
+heroku config:set VERTEX_AI_PROJECT_ID=...
+heroku config:set VERTEX_AI_KEY='{"type":"service_account",...}'
+
+# Deploy
+git push heroku main
+```
+
+### Build Process
+- Turbo monorepo build system
+- TypeScript compilation for all packages
+- Vite build for frontend with asset optimization
+- Multi-stage Docker builds supported
+
+## Authentication & Security
+
+### Session-Based Auth
+- MongoDB sessions collection
+- Session tokens via `x-session-token` header
+- Token validation with `resolveSession()` helper
+- All protected routes require valid session
+
+### Paper Trades Isolation
+- Server-side userId validation (never trust frontend)
+- `requireAuth()` helper extracts userId from session
+- All queries filtered by `{ userId, strategyId }`
+- Returns 401 if not authenticated
+
+### Rate Limiting
+- AI: 30 requests per day per user
+- Tracked in MongoDB `ai_usage` collection
+- Automatic reset at midnight UTC
+- Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+
+## Testing
+
+### API Tests (vitest)
+```bash
+cd apps/api
+pnpm test
+pnpm test -- marketplace
+```
+
+### Root Tests (node:test)
+```bash
+pnpm test
+```
+
+### Playwright E2E
+```bash
+npx playwright test
+# Reports in playwright-report/
+```
+
+## Common Issues
+
+### "Paper trades appearing in wrong account"
+- Ensure session token is sent in `x-session-token` header
+- Check browser console for 401 errors
+- Verify user is logged in (not "anonymous")
+- Server validates userId from session, ignores frontend userId
+
+### "AI generation fails"
+- Check `VERTEX_AI_KEY` is valid service account JSON or access token
+- Verify `VERTEX_AI_PROJECT_ID` matches your GCP project
+- Check rate limit (30/day/user)
+- Review Heroku logs: `heroku logs --tail`
+
+### "Strategy won't start"
+- Check validation errors (shown in red banner at top of editor)
+- Ensure at least one trigger block is present
+- Verify market selector has a market chosen
+- Check for disconnected required inputs
+
+### "Build fails on Heroku"
+- Ensure pnpm-lock.yaml is up to date
+- Run `pnpm install` locally and commit lockfile
+- Check TypeScript errors: `pnpm build` locally first
+
+## Contributing
+
+### Code Style
+- TypeScript with strict mode
+- Explicit types for function parameters and returns
+- Use `type` for unions, `interface` for object shapes
+- Avoid `any` — use `unknown` when needed
+- ES modules with `.js` extensions in imports
+
+### Naming Conventions
+| Element | Convention | Example |
+|---------|------------|---------|
+| Files | kebab-case | `marketplace.test.ts` |
+| Functions | camelCase | `getUserId` |
+| Types | PascalCase | `EditorState` |
+| Constants | SCREAMING_SNAKE_CASE | `CLOB_HOST` |
+| Components | PascalCase | `<EditorCanvas />` |
+
+### Commit Messages
+- Focus on "why" not "what"
+- Concise (1-2 sentences)
+- Present tense: "Add feature" not "Added feature"
+
+## License
+
+Proprietary - All rights reserved.
+
+## Contact
+
+- Website: https://poly-blocks.com
+- Support: support@poly-blocks.com
+- Documentation: https://docs.poly-blocks.com
+
+---
+
+**Built with ❤️ for the Polymarket community**
