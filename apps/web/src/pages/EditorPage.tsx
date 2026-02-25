@@ -20,6 +20,7 @@ import PropertiesPanel from "../components/editor/PropertiesPanel";
 import EditorToolbar from "../components/editor/EditorToolbar";
 import BottomPanel from "../components/editor/BottomPanel";
 import CustomEdge from "../components/editor/CustomEdge";
+import { AlertCircle, X } from "lucide-react";
 
 const nodeTypes = { polyblock: PolyblockNode };
 const edgeTypes = { custom: CustomEdge };
@@ -40,8 +41,14 @@ export default function EditorPage() {
   const strategyId = useEditorStore((s) => s.strategyId);
   const isRunning = useEditorStore((s) => s.isRunning);
   const paperRun = useEditorStore((s) => s.paperRun);
+  const runError = useEditorStore((s) => s.runError);
+  const validationIssues = useEditorStore((s) => s.validationIssues);
 
   const reactFlowRef = useRef<ReactFlowInstance | null>(null);
+
+  // Get validation errors
+  const validationErrors = validationIssues.filter((i) => i.severity === "error");
+  const hasVisibleError = !!runError || validationErrors.length > 0;
 
   // Edge context menu state
   const [edgeMenu, setEdgeMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
@@ -144,6 +151,46 @@ export default function EditorPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", minHeight: 0 }}>
       <EditorToolbar />
+      
+      {/* Error Banner */}
+      {hasVisibleError && (
+        <div style={{
+          background: "linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%)",
+          borderBottom: "1px solid rgba(239, 68, 68, 0.3)",
+          padding: "12px 20px",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+        }}>
+          <AlertCircle size={20} color="#ef4444" style={{ marginTop: 2, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, color: "#ef4444", marginBottom: 6 }}>
+              {runError ? "Execution Error" : "Validation Errors"}
+            </div>
+            <div style={{ color: "var(--pb-text-secondary)", fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+              {runError || validationErrors.map((e, i) => `${i + 1}. ${e.message}`).join("\n")}
+            </div>
+          </div>
+          <button
+            onClick={() => useEditorStore.setState({ runError: null })}
+            style={{
+              background: "rgba(239, 68, 68, 0.2)",
+              border: "none",
+              borderRadius: 4,
+              padding: 4,
+              cursor: "pointer",
+              color: "#ef4444",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            title="Dismiss"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+      
       <div className="editor-container">
         <BlockPalette />
 
