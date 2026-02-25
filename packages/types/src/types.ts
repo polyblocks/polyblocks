@@ -195,6 +195,8 @@ export interface ExecutionLog {
   nodeResults: NodeExecutionResult[];
   /** Summary for the dashboard */
   summary?: string;
+  /** Error message if execution failed */
+  error?: string;
 }
 
 // ─── Paper Trading ──────────────────────────────────────────────────────────

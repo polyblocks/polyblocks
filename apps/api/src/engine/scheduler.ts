@@ -208,11 +208,10 @@ class StrategyScheduler {
       // Create an error log entry
       const errorLog: ExecutionLog = {
         id: `error_${nanoid()}`,
-        runId,
         strategyId: entry.graph.id,
-        userId: entry.graph.userId,
         startedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
+        status: ExecutionStatus.Failed,
         nodeResults: [],
         error: stack || msg,
       };
