@@ -16,19 +16,25 @@ interface AiUsageRecord {
   lastUsed: Date;
 }
 
+const AI_DAILY_LIMIT = (() => {
+  const raw = Number(process.env.AI_DAILY_LIMIT || 100);
+  if (!Number.isFinite(raw) || raw < 1) return 100;
+  return Math.floor(raw);
+})();
+
 async function getAiUsageCol() {
   const { getDb } = await import("../db.js");
   return getDb().collection<AiUsageRecord>("ai_usage");
 }
 
-async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remaining: number; resetAt: string }> {
+async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remaining: number; resetAt: string; limit: number }> {
   const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
   const recordId = `${userId}_${today}`;
   
   const usageCol = await getAiUsageCol();
   const record = await usageCol.findOne({ _id: recordId });
   
-  const dailyLimit = 30;
+  const dailyLimit = AI_DAILY_LIMIT;
   const resetAt = new Date();
   resetAt.setDate(resetAt.getDate() + 1);
   resetAt.setHours(0, 0, 0, 0);
@@ -46,6 +52,7 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remai
       allowed: true,
       remaining: dailyLimit - 1,
       resetAt: resetAt.toISOString(),
+      limit: dailyLimit,
     };
   }
   
@@ -54,6 +61,7 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remai
       allowed: false,
       remaining: 0,
       resetAt: resetAt.toISOString(),
+      limit: dailyLimit,
     };
   }
   
@@ -67,6 +75,7 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remai
     allowed: true,
     remaining: dailyLimit - record.count - 1,
     resetAt: resetAt.toISOString(),
+    limit: dailyLimit,
   };
 }
 
@@ -422,17 +431,17 @@ export async function registerAiRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "Pro subscription required for AI Strategy Builder" });
     }
 
-    // ── Rate limit check (30 requests/day) ────────────────────────────────
+    // ── Rate limit check (configurable requests/day) ──────────────────────
     const rateLimit = await checkRateLimit(userId);
     if (!rateLimit.allowed) {
       return reply.code(429).send({ 
-        error: "Daily AI limit reached. You have used all 30 free generations today.",
+        error: `Daily AI limit reached. You have used all ${rateLimit.limit} generations today.`,
         resetAt: rateLimit.resetAt,
       });
     }
 
     // Add rate limit headers
-    reply.header("X-RateLimit-Limit", 30);
+    reply.header("X-RateLimit-Limit", rateLimit.limit);
     reply.header("X-RateLimit-Remaining", rateLimit.remaining);
     reply.header("X-RateLimit-Reset", rateLimit.resetAt);
 
