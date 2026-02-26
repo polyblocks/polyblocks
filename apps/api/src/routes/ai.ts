@@ -17,8 +17,8 @@ interface AiUsageRecord {
 }
 
 const AI_DAILY_LIMIT = (() => {
-  const raw = Number(process.env.AI_DAILY_LIMIT || 100);
-  if (!Number.isFinite(raw) || raw < 1) return 100;
+  const raw = Number(process.env.AI_DAILY_LIMIT || 50);
+  if (!Number.isFinite(raw) || raw < 1) return 50;
   return Math.floor(raw);
 })();
 
