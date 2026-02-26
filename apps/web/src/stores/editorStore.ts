@@ -1019,8 +1019,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   loadSavedStrategies: async () => {
     const userId = getUserId();
     try {
-      const res = await fetch(`/api/strategies?userId=${userId}`, { headers: authHeaders() });
-      if (!res.ok) return;
+      const res = await fetch("/api/strategies", { headers: authHeaders() });
+      if (!res.ok) {
+        if (res.status === 401) set({ savedStrategies: [] });
+        return;
+      }
       const data = await res.json() as {
         strategies: Array<{
           id: string;
@@ -1070,11 +1073,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   deleteSavedStrategy: async (id) => {
     try {
-      await fetch(`/api/strategies/${id}`, {
+      const res = await fetch(`/api/strategies/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
+
+      if (!res.ok) {
+        let msg = `Failed to delete strategy (${res.status})`;
+        try {
+          const body = await res.json() as { error?: string };
+          if (body.error) msg = body.error;
+        } catch {
+          // ignore parse errors
+        }
+        throw new Error(msg);
+      }
+
+      // Optimistic local removal + authoritative reload from server
       set({ savedStrategies: get().savedStrategies.filter((s) => s.id !== id) });
+      await get().loadSavedStrategies();
     } catch (err) {
       console.error("Failed to delete strategy:", err);
     }
