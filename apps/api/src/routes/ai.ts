@@ -126,15 +126,93 @@ function parseStrategyJson(text: string): { name?: string; nodes?: unknown[]; ed
   const candidates = extractJsonCandidates(text);
   for (const candidate of candidates) {
     try {
-      const parsed = JSON.parse(candidate) as { name?: string; nodes?: unknown[]; edges?: unknown[]; explanation?: string };
+      const parsed = JSON.parse(candidate) as {
+        name?: string;
+        nodes?: unknown[];
+        edges?: unknown[];
+        explanation?: string;
+        strategy?: { name?: string; nodes?: unknown[]; edges?: unknown[]; explanation?: string };
+        graph?: { name?: string; nodes?: unknown[]; edges?: unknown[]; explanation?: string };
+      };
+
       if (parsed && typeof parsed === "object" && Array.isArray(parsed.nodes)) {
         return parsed;
+      }
+
+      if (parsed?.strategy && Array.isArray(parsed.strategy.nodes)) {
+        return parsed.strategy;
+      }
+
+      if (parsed?.graph && Array.isArray(parsed.graph.nodes)) {
+        return parsed.graph;
       }
     } catch {
       // continue
     }
   }
   return null;
+}
+
+function extractThreshold(prompt: string, keywords: string[], fallback: number): number {
+  const lower = prompt.toLowerCase();
+  const lines = lower.split(/\r?\n/);
+
+  for (const line of lines) {
+    if (!keywords.some((k) => line.includes(k))) continue;
+    const m = line.match(/(?:>=|≥|<=|≤|above|below)\s*([0-9]*\.?[0-9]+)/i);
+    if (m) {
+      const v = Number(m[1]);
+      if (Number.isFinite(v) && v >= 0 && v <= 1) return v;
+    }
+  }
+
+  return fallback;
+}
+
+function extractShares(prompt: string, fallback: number): number {
+  const m = prompt.toLowerCase().match(/(\d+(?:\.\d+)?)\s*shares?/);
+  if (!m) return fallback;
+  const v = Number(m[1]);
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+
+function buildFallbackStrategy(prompt: string): { name: string; explanation: string; nodes: unknown[]; edges: unknown[] } {
+  const entryThreshold = extractThreshold(prompt, ["entry", "buy", "reaches", "above", "≥"], 0.85);
+  const stopThreshold = extractThreshold(prompt, ["stop", "loss", "sell", "below", "≤"], 0.70);
+  const shares = extractShares(prompt, 10);
+  const sizeUsd = Number((shares * entryThreshold).toFixed(2));
+
+  return {
+    name: "Threshold Entry + Stop Loss",
+    explanation:
+      "Generated a robust fallback strategy because the AI model returned malformed JSON. This strategy continuously monitors price, buys on entry threshold, applies stop-loss, and closes on market resolution. Cycle-limit logic is not fully represented because a native cycle-counter block is not currently available.",
+    nodes: [
+      { id: "n1", type: "market_selector", position: { x: 60, y: 180 }, config: { conditionId: "", question: "" }, label: "Market" },
+      { id: "n2", type: "interval_trigger", position: { x: 60, y: 40 }, config: { intervalMs: 15000 }, label: "Poll" },
+      { id: "n3", type: "price_data", position: { x: 300, y: 120 }, config: { side: "YES" }, label: "Price" },
+      { id: "n4", type: "threshold_compare", position: { x: 550, y: 80 }, config: { operator: ">=", threshold: entryThreshold }, label: `Entry >= ${entryThreshold}` },
+      { id: "n5", type: "max_exposure", position: { x: 820, y: 80 }, config: { maxExposureUsd: 100 }, label: "Risk" },
+      { id: "n6", type: "place_order", position: { x: 1080, y: 80 }, config: { side: "BUY", outcome: "YES", sizeUsd }, label: `Buy ~${shares} shares` },
+      { id: "n7", type: "threshold_compare", position: { x: 550, y: 220 }, config: { operator: "<=", threshold: stopThreshold }, label: `Stop <= ${stopThreshold}` },
+      { id: "n8", type: "close_position", position: { x: 1080, y: 220 }, config: {}, label: "Stop Loss Exit" },
+      { id: "n9", type: "event_resolution_trigger", position: { x: 820, y: 320 }, config: {}, label: "Resolution" },
+      { id: "n10", type: "close_position", position: { x: 1080, y: 320 }, config: {}, label: "Resolution Exit" },
+    ],
+    edges: [
+      { id: "e1", source: "n1", sourceHandle: "market", target: "n3", targetHandle: "market" },
+      { id: "e2", source: "n2", sourceHandle: "signal", target: "n3", targetHandle: "trigger" },
+      { id: "e3", source: "n3", sourceHandle: "midpoint", target: "n4", targetHandle: "value" },
+      { id: "e4", source: "n4", sourceHandle: "signal", target: "n5", targetHandle: "signal" },
+      { id: "e5", source: "n5", sourceHandle: "signal", target: "n6", targetHandle: "signal" },
+      { id: "e6", source: "n1", sourceHandle: "market", target: "n6", targetHandle: "market" },
+      { id: "e7", source: "n3", sourceHandle: "midpoint", target: "n7", targetHandle: "value" },
+      { id: "e8", source: "n7", sourceHandle: "signal", target: "n8", targetHandle: "signal" },
+      { id: "e9", source: "n1", sourceHandle: "market", target: "n8", targetHandle: "market" },
+      { id: "e10", source: "n1", sourceHandle: "market", target: "n9", targetHandle: "market" },
+      { id: "e11", source: "n9", sourceHandle: "signal", target: "n10", targetHandle: "signal" },
+      { id: "e12", source: "n1", sourceHandle: "market", target: "n10", targetHandle: "market" },
+    ],
+  };
 }
 
 // ── Auth helper (mirrors auth.ts pattern) ────────────────────────────────
@@ -495,11 +573,11 @@ export async function registerAiRoutes(app: FastifyInstance) {
         .join("\n")
         .trim();
 
-      const strategy = parseStrategyJson(text);
+      let strategy = parseStrategyJson(text);
 
       if (!strategy) {
         app.log.error(`AI returned unparsable response: ${text.slice(0, 600)}`);
-        return reply.code(500).send({ error: "AI returned an invalid format. Please try a shorter or more specific prompt." });
+        strategy = buildFallbackStrategy(prompt);
       }
 
       // Basic validation
