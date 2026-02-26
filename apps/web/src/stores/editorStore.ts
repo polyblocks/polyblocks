@@ -616,7 +616,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
 
       try {
-        const res = await fetch(`/api/execution/schedule/status/${capturedStrategyId}`, { signal });
+        const res = await fetch(`/api/execution/schedule/status/${capturedStrategyId}`, { signal, headers: authHeaders() });
         if (!res.ok) break;
         const data = await res.json() as {
           running: boolean;
@@ -634,7 +634,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           set({ runIteration: data.iteration });
 
           // Fetch recent logs from the scheduler
-          const logsRes = await fetch(`/api/execution/schedule/logs/${capturedStrategyId}`, { signal });
+          const logsRes = await fetch(`/api/execution/schedule/logs/${capturedStrategyId}`, { signal, headers: authHeaders() });
           if (logsRes.ok && get().strategyId === capturedStrategyId) {
             const logsData = await logsRes.json() as { logs: ExecutionLog[] };
             if (logsData.logs.length > 0) {

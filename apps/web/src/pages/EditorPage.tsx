@@ -21,6 +21,7 @@ import EditorToolbar from "../components/editor/EditorToolbar";
 import BottomPanel from "../components/editor/BottomPanel";
 import CustomEdge from "../components/editor/CustomEdge";
 import { AlertCircle, X } from "lucide-react";
+import { useAuthStore } from "../stores/authStore";
 
 const nodeTypes = { polyblock: PolyblockNode };
 const edgeTypes = { custom: CustomEdge };
@@ -60,7 +61,10 @@ export default function EditorPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/execution/schedule/status/${strategyId}`);
+        const token = useAuthStore.getState().token;
+        const headers: Record<string, string> = {};
+        if (token) headers["x-session-token"] = token;
+        const res = await fetch(`/api/execution/schedule/status/${strategyId}`, { headers });
         if (!res.ok || cancelled) return;
         const data = await res.json() as { running: boolean; mode?: string; iteration?: number };
         if (data.running && !cancelled) {

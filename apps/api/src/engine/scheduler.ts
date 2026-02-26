@@ -14,6 +14,7 @@ import { createLiveHandlers } from "./liveHandlers.js";
 import { nanoid } from "nanoid";
 
 interface ScheduledStrategy {
+  userId: string;
   graph: StrategyGraph;
   intervalMs: number;
   mode: "paper" | "live";
@@ -36,13 +37,20 @@ class StrategyScheduler {
   private schedules = new Map<string, ScheduledStrategy>();
   private listeners = new Map<string, Array<(log: ExecutionLog) => void>>();
 
-  start(graph: StrategyGraph, intervalMs: number, mode: "paper" | "live" = "paper") {
+  private makeKey(userId: string, strategyId: string): string {
+    return `${userId}:${strategyId}`;
+  }
+
+  start(userId: string, graph: StrategyGraph, intervalMs: number, mode: "paper" | "live" = "paper") {
+    const key = this.makeKey(userId, graph.id);
+
     // Stop existing schedule for this strategy
-    if (this.schedules.has(graph.id)) {
-      this.stop(graph.id);
+    if (this.schedules.has(key)) {
+      this.stop(userId, graph.id);
     }
 
     const entry: ScheduledStrategy = {
+      userId,
       graph,
       intervalMs,
       mode,
@@ -62,29 +70,30 @@ class StrategyScheduler {
       }
     }, intervalMs);
 
-    this.schedules.set(graph.id, entry);
+    this.schedules.set(key, entry);
     console.log(
-      `[Scheduler] Started strategy ${graph.id} (${graph.name}) in ${mode} mode every ${intervalMs}ms`,
+      `[Scheduler] Started strategy ${graph.id} for user ${userId} (${graph.name}) in ${mode} mode every ${intervalMs}ms`,
     );
   }
 
-  stop(strategyId: string) {
-    const entry = this.schedules.get(strategyId);
+  stop(userId: string, strategyId: string) {
+    const key = this.makeKey(userId, strategyId);
+    const entry = this.schedules.get(key);
     if (entry?.timer) {
       clearInterval(entry.timer);
     }
-    this.schedules.delete(strategyId);
-    console.log(`[Scheduler] Stopped strategy ${strategyId}`);
+    this.schedules.delete(key);
+    console.log(`[Scheduler] Stopped strategy ${strategyId} for user ${userId}`);
   }
 
   stopAll() {
-    for (const [id] of this.schedules) {
-      this.stop(id);
+    for (const [, entry] of this.schedules) {
+      this.stop(entry.userId, entry.graph.id);
     }
   }
 
-  isScheduled(strategyId: string): boolean {
-    return this.schedules.has(strategyId);
+  isScheduled(userId: string, strategyId: string): boolean {
+    return this.schedules.has(this.makeKey(userId, strategyId));
   }
 
   /** Returns true if any strategy is currently scheduled. */
@@ -93,15 +102,15 @@ class StrategyScheduler {
   }
 
   /** Returns the ID of the currently running strategy, or null. */
-  getRunningStrategyId(): string | null {
-    for (const [id] of this.schedules) {
-      return id;
+  getRunningStrategyId(userId: string): string | null {
+    for (const [, entry] of this.schedules) {
+      if (entry.userId === userId) return entry.graph.id;
     }
     return null;
   }
 
-  getStatus(strategyId: string) {
-    const entry = this.schedules.get(strategyId);
+  getStatus(userId: string, strategyId: string) {
+    const entry = this.schedules.get(this.makeKey(userId, strategyId));
     if (!entry) return null;
     return {
       strategyId,
@@ -117,7 +126,7 @@ class StrategyScheduler {
   }
 
   /** Get status of ALL running strategies */
-  getAllRunning(): Array<{
+  getAllRunning(userId: string): Array<{
     strategyId: string;
     strategyName: string;
     mode: "paper" | "live";
@@ -136,9 +145,10 @@ class StrategyScheduler {
       lastError?: string;
     }> = [];
 
-    for (const [id, entry] of this.schedules) {
+    for (const [, entry] of this.schedules) {
+      if (entry.userId !== userId) continue;
       result.push({
-        strategyId: id,
+        strategyId: entry.graph.id,
         strategyName: entry.graph.name,
         mode: entry.mode,
         startedAt: entry.startedAt,
@@ -152,16 +162,17 @@ class StrategyScheduler {
   }
 
   /** Get recent logs for a scheduled strategy */
-  getRecentLogs(strategyId: string): ExecutionLog[] {
-    const entry = this.schedules.get(strategyId);
+  getRecentLogs(userId: string, strategyId: string): ExecutionLog[] {
+    const entry = this.schedules.get(this.makeKey(userId, strategyId));
     return entry?.recentLogs || [];
   }
 
-  onResult(strategyId: string, listener: (log: ExecutionLog) => void) {
-    if (!this.listeners.has(strategyId)) {
-      this.listeners.set(strategyId, []);
+  onResult(userId: string, strategyId: string, listener: (log: ExecutionLog) => void) {
+    const key = this.makeKey(userId, strategyId);
+    if (!this.listeners.has(key)) {
+      this.listeners.set(key, []);
     }
-    this.listeners.get(strategyId)!.push(listener);
+    this.listeners.get(key)!.push(listener);
   }
 
   private async runOnce(entry: ScheduledStrategy) {
@@ -193,7 +204,7 @@ class StrategyScheduler {
       if (entry.recentLogs.length > 20) entry.recentLogs.length = 20;
 
       // Notify listeners
-      const listeners = this.listeners.get(entry.graph.id) || [];
+      const listeners = this.listeners.get(this.makeKey(entry.userId, entry.graph.id)) || [];
       for (const listener of listeners) {
         listener(result);
       }

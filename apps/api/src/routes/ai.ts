@@ -70,6 +70,73 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remai
   };
 }
 
+function extractJsonCandidates(text: string): string[] {
+  const candidates: string[] = [];
+  const trimmed = text.trim();
+  if (!trimmed) return candidates;
+
+  candidates.push(trimmed);
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) candidates.push(fenced[1].trim());
+
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaping = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+      } else if (ch === "\\") {
+        escaping = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+      continue;
+    }
+
+    if (ch === "}") {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        candidates.push(trimmed.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return [...new Set(candidates)];
+}
+
+function parseStrategyJson(text: string): { name?: string; nodes?: unknown[]; edges?: unknown[]; explanation?: string } | null {
+  const candidates = extractJsonCandidates(text);
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as { name?: string; nodes?: unknown[]; edges?: unknown[]; explanation?: string };
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.nodes)) {
+        return parsed;
+      }
+    } catch {
+      // continue
+    }
+  }
+  return null;
+}
+
 // ── Auth helper (mirrors auth.ts pattern) ────────────────────────────────
 
 async function resolveSession(token: string): Promise<string | null> {
@@ -418,20 +485,50 @@ export async function registerAiRoutes(app: FastifyInstance) {
       const vertexData = await vertexRes.json() as {
         candidates?: { content?: { parts?: [{ text?: string }] } }[];
       };
-      const text = vertexData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const text = (vertexData.candidates?.[0]?.content?.parts || [])
+        .map((p) => p.text || "")
+        .join("\n")
+        .trim();
 
-      // Parse the JSON response
-      let strategy: { name?: string; nodes?: unknown[]; edges?: unknown[] };
-      try {
-        strategy = JSON.parse(text);
-      } catch {
-        // Try to extract JSON from potential markdown code fences
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          strategy = JSON.parse(jsonMatch[0]);
-        } else {
-          return reply.code(500).send({ error: "AI returned invalid response. Please try again." });
+      let strategy = parseStrategyJson(text);
+
+      if (!strategy) {
+        const repairRes = await fetch(vertexEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            contents: [{
+              role: "user",
+              parts: [{
+                text: `Return ONLY valid JSON with keys name, explanation, nodes, edges. Do not include markdown.\n\nOriginal output:\n${text}`,
+              }],
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 4096,
+              responseMimeType: "application/json",
+            },
+          }),
+        });
+
+        if (repairRes.ok) {
+          const repairData = await repairRes.json() as {
+            candidates?: { content?: { parts?: [{ text?: string }] } }[];
+          };
+          const repairedText = (repairData.candidates?.[0]?.content?.parts || [])
+            .map((p) => p.text || "")
+            .join("\n")
+            .trim();
+          strategy = parseStrategyJson(repairedText);
         }
+      }
+
+      if (!strategy) {
+        app.log.error(`AI returned unparsable response: ${text.slice(0, 600)}`);
+        return reply.code(500).send({ error: "AI returned an invalid format. Please try a shorter or more specific prompt." });
       }
 
       // Basic validation

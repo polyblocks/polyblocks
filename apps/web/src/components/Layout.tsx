@@ -28,9 +28,13 @@ export default function Layout() {
 
   const handleStopStrategy = useCallback(async (strategyId: string) => {
     try {
+      const token = useAuthStore.getState().token;
       await fetch("/api/execution/schedule/stop", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "x-session-token": token } : {}),
+        },
         body: JSON.stringify({ strategyId }),
       });
       // Immediately refresh the list
@@ -40,7 +44,10 @@ export default function Layout() {
 
   const fetchRunning = useCallback(async () => {
     try {
-      const res = await fetch("/api/execution/schedule/running");
+      const token = useAuthStore.getState().token;
+      const res = await fetch("/api/execution/schedule/running", {
+        headers: token ? { "x-session-token": token } : {},
+      });
       if (res.ok) {
         const data = await res.json();
         setRunningStrategies(data.strategies || data.running || []);

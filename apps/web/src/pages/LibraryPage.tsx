@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useEditorStore, type SavedStrategy } from "../stores/editorStore";
+import { useAuthStore } from "../stores/authStore";
 import { Workflow, Trash2, FolderOpen, Clock, Layers, Pencil, Check, X, Radio, Square, FileText } from "lucide-react";
 import { Button } from "@polyblocks/ui";
 import { timeAgoEt } from "../lib/time";
@@ -168,7 +169,10 @@ export default function LibraryPage() {
 
   const fetchRunning = async () => {
     try {
-      const res = await fetch("/api/execution/schedule/running");
+      const token = useAuthStore.getState().token;
+      const res = await fetch("/api/execution/schedule/running", {
+        headers: token ? { "x-session-token": token } : {},
+      });
       if (!res.ok) return;
       const data = await res.json() as { strategies: RunningStrategy[] };
       const map = new Map<string, RunningStrategy>();
@@ -211,9 +215,13 @@ export default function LibraryPage() {
 
   const handleStop = async (strategyId: string) => {
     try {
+      const token = useAuthStore.getState().token;
       await fetch("/api/execution/schedule/stop", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "x-session-token": token } : {}),
+        },
         body: JSON.stringify({ strategyId }),
       });
       fetchRunning();
