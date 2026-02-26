@@ -38,22 +38,35 @@ export default function AiBuilderPanel() {
     setLoading(true);
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 28_000);
+
       const res = await fetch("/api/ai/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-session-token": token || "",
         },
+        signal: controller.signal,
         body: JSON.stringify({ prompt: prompt.trim() }),
       });
 
-      const data = await res.json() as {
+      clearTimeout(timeout);
+
+      const raw = await res.text();
+      let data: {
         strategy?: { name: string; explanation?: string; nodes: unknown[]; edges: unknown[] };
         error?: string;
-      };
+      } = {};
+
+      try {
+        data = raw ? JSON.parse(raw) as typeof data : {};
+      } catch {
+        data = { error: raw || "Unexpected server response" };
+      }
 
       if (!res.ok || !data.strategy) {
-        setError(data.error || "Generation failed. Please try again.");
+        setError(data.error || `Generation failed (${res.status}). Please try again.`);
         setLoading(false);
         return;
       }
@@ -78,7 +91,13 @@ export default function AiBuilderPanel() {
         nodeCount: data.strategy.nodes.length,
       });
     } catch (err) {
-      setError("Network error. Please try again.");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError("AI request timed out. Try a shorter prompt.");
+      } else if (err instanceof Error) {
+        setError(err.message || "Network error. Please try again.");
+      } else {
+        setError("Network error. Please try again.");
+      }
     } finally {
       setLoading(false);
     }

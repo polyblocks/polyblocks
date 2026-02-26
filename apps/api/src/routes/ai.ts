@@ -434,12 +434,16 @@ export async function registerAiRoutes(app: FastifyInstance) {
     try {
       const vertexEndpoint = `https://us-central1-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent`;
       
+      const vertexAbort = new AbortController();
+      const vertexTimeout = setTimeout(() => vertexAbort.abort(), 20_000);
+
       const vertexRes = await fetch(vertexEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
+        signal: vertexAbort.signal,
         body: JSON.stringify({
           contents: [{
             role: "user",
@@ -448,8 +452,8 @@ export async function registerAiRoutes(app: FastifyInstance) {
             }]
           }],
           generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 4096,
+            temperature: 0.25,
+            maxOutputTokens: 1800,
             responseMimeType: "application/json",
           },
           safetySettings: [
@@ -472,6 +476,7 @@ export async function registerAiRoutes(app: FastifyInstance) {
           ]
         }),
       });
+      clearTimeout(vertexTimeout);
 
       if (!vertexRes.ok) {
         const errBody = await vertexRes.text();
@@ -490,41 +495,7 @@ export async function registerAiRoutes(app: FastifyInstance) {
         .join("\n")
         .trim();
 
-      let strategy = parseStrategyJson(text);
-
-      if (!strategy) {
-        const repairRes = await fetch(vertexEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            contents: [{
-              role: "user",
-              parts: [{
-                text: `Return ONLY valid JSON with keys name, explanation, nodes, edges. Do not include markdown.\n\nOriginal output:\n${text}`,
-              }],
-            }],
-            generationConfig: {
-              temperature: 0.1,
-              maxOutputTokens: 4096,
-              responseMimeType: "application/json",
-            },
-          }),
-        });
-
-        if (repairRes.ok) {
-          const repairData = await repairRes.json() as {
-            candidates?: { content?: { parts?: [{ text?: string }] } }[];
-          };
-          const repairedText = (repairData.candidates?.[0]?.content?.parts || [])
-            .map((p) => p.text || "")
-            .join("\n")
-            .trim();
-          strategy = parseStrategyJson(repairedText);
-        }
-      }
+      const strategy = parseStrategyJson(text);
 
       if (!strategy) {
         app.log.error(`AI returned unparsable response: ${text.slice(0, 600)}`);
@@ -604,6 +575,10 @@ export async function registerAiRoutes(app: FastifyInstance) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       app.log.error(`AI generation failed: ${message}`);
+
+      if (message.includes("AbortError") || message.includes("aborted")) {
+        return reply.code(504).send({ error: "AI request timed out. Please shorten your prompt and try again." });
+      }
 
       if (message.includes("content_filter") || message.includes("content management")) {
         return reply.code(400).send({ error: "Your prompt was flagged by content filters. Please rephrase." });

@@ -36,6 +36,10 @@ async function resolveSession(token: string): Promise<string | null> {
 // ── In-memory execution log store ────────────────────────────────────────────
 const executionLogs = new Map<string, ExecutionLog[]>();
 
+function executionLogKey(userId: string, strategyId: string): string {
+  return `${userId}:${strategyId}`;
+}
+
 export async function registerExecutionRoutes(app: FastifyInstance) {
   // ── Run a strategy once (paper or live mode) ──────────────────────────────
   app.post("/run", async (request, reply) => {
@@ -101,12 +105,13 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
     const result = await evaluateGraph(graph, handlers, ctx);
 
     // Store logs
-    if (!executionLogs.has(graph.id)) {
-      executionLogs.set(graph.id, []);
+    const logKey = executionLogKey(userId, graph.id);
+    if (!executionLogs.has(logKey)) {
+      executionLogs.set(logKey, []);
     }
-    executionLogs.get(graph.id)!.unshift(result);
+    executionLogs.get(logKey)!.unshift(result);
     // Keep max 50 logs per strategy
-    const stratLogs = executionLogs.get(graph.id)!;
+    const stratLogs = executionLogs.get(logKey)!;
     if (stratLogs.length > 50) stratLogs.length = 50;
 
     return { result, logs };
@@ -217,8 +222,9 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
       const { strategyId } = request.params;
       const status = scheduler.getStatus(userId, strategyId);
       if (!status) return { logs: [] };
+      const logKey = executionLogKey(userId, strategyId);
       return {
-        logs: executionLogs.get(strategyId) || [],
+        logs: executionLogs.get(logKey) || [],
       };
     },
   );
@@ -234,7 +240,7 @@ export async function registerExecutionRoutes(app: FastifyInstance) {
       const { strategyId } = request.params;
       const status = scheduler.getStatus(userId, strategyId);
       if (!status) return { cleared: true };
-      executionLogs.delete(strategyId);
+      executionLogs.delete(executionLogKey(userId, strategyId));
       return { cleared: true };
     },
   );
