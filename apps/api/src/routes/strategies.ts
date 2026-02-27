@@ -25,12 +25,13 @@ async function resolveSession(token: string): Promise<string | null> {
   return session.userId;
 }
 
-function strategyIdFilter(id: string, userId: string): Record<string, unknown> {
-  const clauses: Array<Record<string, unknown>> = [{ _id: id, userId }];
+async function findStrategyByIdAnyType(id: string) {
+  const clauses: Array<Record<string, unknown>> = [{ _id: id }];
   if (ObjectId.isValid(id)) {
-    clauses.push({ _id: new ObjectId(id), userId });
+    clauses.push({ _id: new ObjectId(id) });
   }
-  return clauses.length === 1 ? clauses[0] : { $or: clauses };
+  const filter = clauses.length === 1 ? clauses[0] : { $or: clauses };
+  return strategiesCol().findOne(filter as any);
 }
 
 export async function registerStrategyRoutes(app: FastifyInstance) {
@@ -62,8 +63,9 @@ export async function registerStrategyRoutes(app: FastifyInstance) {
     const userId = await resolveSession(token);
     if (!userId) return reply.code(401).send({ error: "Not authenticated" });
     const { id } = request.params;
-    const doc = await strategiesCol().findOne(strategyIdFilter(id, userId) as any);
+    const doc = await findStrategyByIdAnyType(id);
     if (!doc) return reply.status(404).send({ error: "Strategy not found" });
+    if (String(doc.userId) !== userId) return reply.status(404).send({ error: "Strategy not found" });
 
     // Return in StrategyGraph-compatible shape
     return { ...doc, id: doc._id };
@@ -106,14 +108,14 @@ export async function registerStrategyRoutes(app: FastifyInstance) {
     const userId = await resolveSession(token);
     if (!userId) return reply.code(401).send({ error: "Not authenticated" });
     const { id } = request.params;
-    const filter = strategyIdFilter(id, userId);
-    const existing = await strategiesCol().findOne(filter as any);
+    const existing = await findStrategyByIdAnyType(id);
     if (!existing) return reply.status(404).send({ error: "Strategy not found" });
+    if (String(existing.userId) !== userId) return reply.status(404).send({ error: "Strategy not found" });
 
     const body = request.body as Partial<StrategyGraph>;
     const { id: _stripId, ...updates } = body as Record<string, unknown>;
 
-    await strategiesCol().updateOne(filter as any, { $set: { ...updates, updatedAt: new Date().toISOString() } });
+    await strategiesCol().updateOne({ _id: existing._id } as any, { $set: { ...updates, updatedAt: new Date().toISOString() } });
 
     return { id, updated: true };
   });
@@ -124,7 +126,11 @@ export async function registerStrategyRoutes(app: FastifyInstance) {
     const userId = await resolveSession(token);
     if (!userId) return reply.code(401).send({ error: "Not authenticated" });
     const { id } = request.params;
-    const result = await strategiesCol().deleteOne(strategyIdFilter(id, userId) as any);
+    const existing = await findStrategyByIdAnyType(id);
+    if (!existing) return reply.status(404).send({ error: "Strategy not found" });
+    if (String(existing.userId) !== userId) return reply.status(404).send({ error: "Strategy not found" });
+
+    const result = await strategiesCol().deleteOne({ _id: existing._id } as any);
     if (result.deletedCount === 0) {
       return reply.status(404).send({ error: "Strategy not found" });
     }
