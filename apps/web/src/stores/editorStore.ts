@@ -1072,6 +1072,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   deleteSavedStrategy: async (id) => {
+    const previous = get().savedStrategies;
+    // Optimistic removal so UI updates immediately
+    set({ savedStrategies: previous.filter((s) => s.id !== id) });
+
     try {
       const res = await fetch(`/api/strategies/${id}`, {
         method: "DELETE",
@@ -1089,11 +1093,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         throw new Error(msg);
       }
 
-      // Optimistic local removal + authoritative reload from server
-      set({ savedStrategies: get().savedStrategies.filter((s) => s.id !== id) });
+      // Authoritative reload from server
       await get().loadSavedStrategies();
     } catch (err) {
       console.error("Failed to delete strategy:", err);
+      // Roll back optimistic update on failure
+      set({ savedStrategies: previous });
     }
   },
 
