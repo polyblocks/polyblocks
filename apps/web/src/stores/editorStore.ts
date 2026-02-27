@@ -41,9 +41,10 @@ function getUserId(): string {
   return useAuthStore.getState().user?.id || "anonymous";
 }
 
-function authHeaders(): Record<string, string> {
+function authHeaders(includeJson = false): Record<string, string> {
   const token = useAuthStore.getState().token;
-  const h: Record<string, string> = { "Content-Type": "application/json" };
+  const h: Record<string, string> = {};
+  if (includeJson) h["Content-Type"] = "application/json";
   if (token) h["x-session-token"] = token;
   return h;
 }
@@ -757,7 +758,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                     });
                     fetch(`/api/paper-trades/${capturedStrategyId}`, {
                       method: "POST",
-                      headers: authHeaders(),
+                      headers: authHeaders(true),
                       body: JSON.stringify({ userId, trades: newTrades }),
                     }).catch(() => { });
                   }
@@ -843,7 +844,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       const res = await fetch("/api/execution/run", {
         method: "POST",
-        headers: authHeaders(),
+        headers: authHeaders(true),
         body: JSON.stringify({ ...graph, mode: get().runMode }),
       });
 
@@ -896,7 +897,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         // Persist to MongoDB
         fetch(`/api/paper-trades/${graph.id}`, {
           method: "POST",
-          headers: authHeaders(),
+          headers: authHeaders(true),
           body: JSON.stringify({ userId, trades: newTrades }),
         }).catch(() => { });
       }
@@ -961,7 +962,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       const res = await fetch("/api/execution/schedule/start", {
         method: "POST",
-        headers: authHeaders(),
+        headers: authHeaders(true),
         body: JSON.stringify({ ...graph, mode: get().runMode }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -989,7 +990,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       await fetch("/api/execution/schedule/stop", {
         method: "POST",
-        headers: authHeaders(),
+        headers: authHeaders(true),
         body: JSON.stringify({ strategyId }),
       });
     } catch {
@@ -1006,7 +1007,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       await fetch("/api/strategies", {
         method: "POST",
-        headers: authHeaders(),
+        headers: authHeaders(true),
         body: JSON.stringify({ ...graph, userId, description: description || "" }),
       });
       // Refresh library list
@@ -1106,7 +1107,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       await fetch(`/api/strategies/${id}`, {
         method: "PUT",
-        headers: authHeaders(),
+        headers: authHeaders(true),
         body: JSON.stringify({ name }),
       });
       set({
@@ -1140,7 +1141,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const strategyId = get().strategyId;
     fetch(`/api/paper-trades/${strategyId}/logs`, {
       method: "POST",
-      headers: authHeaders(),
+      headers: authHeaders(true),
       body: JSON.stringify({ userId, logs: [log] }),
     }).catch(() => { });
   },
