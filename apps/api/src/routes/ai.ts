@@ -134,8 +134,8 @@ function extractJsonCandidates(text: string): string[] {
 function parseStrategyJson(text: string): { name?: string; nodes?: unknown[]; edges?: unknown[]; explanation?: string } | null {
   const candidates = extractJsonCandidates(text);
   for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as {
+    const tryParse = (raw: string) => {
+      const parsed = JSON.parse(raw) as {
         name?: string;
         nodes?: unknown[];
         edges?: unknown[];
@@ -155,6 +155,24 @@ function parseStrategyJson(text: string): { name?: string; nodes?: unknown[]; ed
       if (parsed?.graph && Array.isArray(parsed.graph.nodes)) {
         return parsed.graph;
       }
+
+      return null;
+    };
+
+    try {
+      const parsed = tryParse(candidate);
+      if (parsed) return parsed;
+    } catch {
+      // continue
+    }
+
+    try {
+      const normalized = candidate
+        .replace(/[“”]/g, "\"")
+        .replace(/[‘’]/g, "\"")
+        .replace(/,\s*([}\]])/g, "$1");
+      const parsed = tryParse(normalized);
+      if (parsed) return parsed;
     } catch {
       // continue
     }

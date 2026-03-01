@@ -729,7 +729,10 @@ export default function PositionsPage() {
         setLoading(true);
       }
       setError(null);
-      const res = await fetch("/api/positions/");
+      const headers: Record<string, string> = {};
+      if (token) headers["x-session-token"] = token;
+      const userQuery = userId && userId !== "anonymous" ? `?userId=${encodeURIComponent(userId)}` : "";
+      const res = await fetch(`/api/positions/${userQuery}`, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as { positions: Position[]; error?: string };
       if (data.error && data.positions.length === 0) {
@@ -744,18 +747,21 @@ export default function PositionsPage() {
       }
       setLiveLoaded(true);
     }
-  }, [liveLoaded]);
+  }, [liveLoaded, token, userId]);
 
   const fetchTrades = useCallback(async () => {
     try {
-      const res = await fetch("/api/positions/trades");
+      const headers: Record<string, string> = {};
+      if (token) headers["x-session-token"] = token;
+      const userQuery = userId && userId !== "anonymous" ? `?userId=${encodeURIComponent(userId)}` : "";
+      const res = await fetch(`/api/positions/trades${userQuery}`, { headers });
       if (!res.ok) return;
       const data = await res.json() as { trades: Trade[] };
       setTrades(data.trades || []);
     } catch {
       // Non-critical
     }
-  }, []);
+  }, [token, userId]);
 
   useEffect(() => {
     if (mode !== "live") return;

@@ -8,11 +8,28 @@ import { ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client"
 import { Wallet } from "ethers";
 import { getCredentials } from "./credentials.js";
 import { builderConfig } from "../builderConfig.js";
+import { sessionsCol } from "../db.js";
 
 const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
 const DATA_API = "https://data-api.polymarket.com";
 const GAMMA_HOST = process.env.POLYMARKET_GAMMA_HOST || "https://gamma-api.polymarket.com";
 const CHAIN_ID = 137;
+
+function getSessionToken(headers: Record<string, unknown>): string {
+  const token = headers["x-session-token"];
+  return typeof token === "string" ? token : "";
+}
+
+async function resolveSession(token: string): Promise<string | null> {
+  if (!token) return null;
+  const session = await sessionsCol().findOne({ _id: token });
+  if (!session) return null;
+  if (session.expiresAt < new Date()) {
+    await sessionsCol().deleteOne({ _id: token });
+    return null;
+  }
+  return session.userId;
+}
 
 async function createClobClient(userId?: string): Promise<ClobClient> {
   const creds = await getCredentials(userId);
@@ -103,7 +120,11 @@ export async function registerPositionRoutes(app: FastifyInstance) {
 
   // ── Get all open positions ────────────────────────────────────────────────
   app.get("/", async (request) => {
-    const { userId } = request.query as { userId?: string };
+    const token = getSessionToken(request.headers as Record<string, unknown>);
+    const sessionUserId = await resolveSession(token);
+    const { userId: queryUserId } = request.query as { userId?: string };
+    const userId = sessionUserId || queryUserId || undefined;
+    if (!userId) return { positions: [], error: "Not authenticated" };
 
     try {
       const creds = await getCredentials(userId);
@@ -183,7 +204,11 @@ export async function registerPositionRoutes(app: FastifyInstance) {
     }
 
     try {
-      const client = await createClobClient(body.userId);
+      const token = getSessionToken(request.headers as Record<string, unknown>);
+      const sessionUserId = await resolveSession(token);
+      const userId = sessionUserId || body.userId || undefined;
+      if (!userId) return { success: false, error: "Not authenticated" };
+      const client = await createClobClient(userId);
 
       console.log(`[Positions] Closing position: SELL ${body.shares} shares of ${body.outcome} (token: ${body.tokenId})`);
 
@@ -330,7 +355,11 @@ export async function registerPositionRoutes(app: FastifyInstance) {
 
   // ── Get trade history ─────────────────────────────────────────────────────
   app.get("/trades", async (request) => {
-    const { userId } = request.query as { userId?: string };
+    const token = getSessionToken(request.headers as Record<string, unknown>);
+    const sessionUserId = await resolveSession(token);
+    const { userId: queryUserId } = request.query as { userId?: string };
+    const userId = sessionUserId || queryUserId || undefined;
+    if (!userId) return { trades: [], error: "Not authenticated" };
 
     try {
       const creds = await getCredentials(userId);

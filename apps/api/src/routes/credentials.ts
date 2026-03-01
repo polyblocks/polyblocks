@@ -55,7 +55,10 @@ export async function getCredentials(userId?: string): Promise<StoredCredentials
     };
   }
 
-  const doc = await credentialsCol().findOne({ userId });
+  let doc = await credentialsCol().findOne({ userId });
+  if (!doc) {
+    doc = await credentialsCol().findOne({ _id: userId });
+  }
 
   if (!doc || !doc.isConfigured) {
     return {
