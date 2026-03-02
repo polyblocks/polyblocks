@@ -89,8 +89,10 @@ function extractJsonCandidates(text: string): string[] {
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced?.[1]) candidates.push(fenced[1].trim());
 
-  let depth = 0;
-  let start = -1;
+  let objectDepth = 0;
+  let objectStart = -1;
+  let arrayDepth = 0;
+  let arrayStart = -1;
   let inString = false;
   let escaping = false;
 
@@ -114,21 +116,54 @@ function extractJsonCandidates(text: string): string[] {
     }
 
     if (ch === "{") {
-      if (depth === 0) start = i;
-      depth++;
+      if (objectDepth === 0) objectStart = i;
+      objectDepth++;
       continue;
     }
 
     if (ch === "}") {
-      depth--;
-      if (depth === 0 && start >= 0) {
-        candidates.push(trimmed.slice(start, i + 1));
-        start = -1;
+      objectDepth--;
+      if (objectDepth === 0 && objectStart >= 0) {
+        candidates.push(trimmed.slice(objectStart, i + 1));
+        objectStart = -1;
+      }
+      continue;
+    }
+
+    if (ch === "[") {
+      if (arrayDepth === 0) arrayStart = i;
+      arrayDepth++;
+      continue;
+    }
+
+    if (ch === "]") {
+      arrayDepth--;
+      if (arrayDepth === 0 && arrayStart >= 0) {
+        candidates.push(trimmed.slice(arrayStart, i + 1));
+        arrayStart = -1;
       }
     }
   }
 
   return [...new Set(candidates)];
+}
+
+function normalizeJsonText(raw: string): string {
+  let cleaned = raw.trim();
+  cleaned = cleaned.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+  const firstObj = cleaned.indexOf("{");
+  const lastObj = cleaned.lastIndexOf("}");
+  const firstArr = cleaned.indexOf("[");
+  const lastArr = cleaned.lastIndexOf("]");
+  if (firstObj >= 0 && lastObj > firstObj) {
+    cleaned = cleaned.slice(firstObj, lastObj + 1);
+  } else if (firstArr >= 0 && lastArr > firstArr) {
+    cleaned = cleaned.slice(firstArr, lastArr + 1);
+  }
+  cleaned = cleaned.replace(/[“”]/g, "\"").replace(/[‘’]/g, "\"");
+  cleaned = cleaned.replace(/,\s*([}\]])/g, "$1");
+  cleaned = cleaned.replace(/\u2028|\u2029/g, "");
+  return cleaned;
 }
 
 function parseStrategyJson(text: string): { name?: string; nodes?: unknown[]; edges?: unknown[]; explanation?: string } | null {
@@ -143,6 +178,13 @@ function parseStrategyJson(text: string): { name?: string; nodes?: unknown[]; ed
         strategy?: { name?: string; nodes?: unknown[]; edges?: unknown[]; explanation?: string };
         graph?: { name?: string; nodes?: unknown[]; edges?: unknown[]; explanation?: string };
       };
+
+      if (Array.isArray(parsed)) {
+        const first = parsed[0] as { nodes?: unknown[] } | undefined;
+        if (first && Array.isArray(first.nodes)) {
+          return first;
+        }
+      }
 
       if (parsed && typeof parsed === "object" && Array.isArray(parsed.nodes)) {
         return parsed;
@@ -167,15 +209,29 @@ function parseStrategyJson(text: string): { name?: string; nodes?: unknown[]; ed
     }
 
     try {
-      const normalized = candidate
-        .replace(/[“”]/g, "\"")
-        .replace(/[‘’]/g, "\"")
-        .replace(/,\s*([}\]])/g, "$1");
+      const normalized = normalizeJsonText(candidate);
       const parsed = tryParse(normalized);
       if (parsed) return parsed;
     } catch {
       // continue
     }
+  }
+  try {
+    const normalized = normalizeJsonText(text);
+    const parsed = JSON.parse(normalized) as { nodes?: unknown[]; strategy?: { nodes?: unknown[] }; graph?: { nodes?: unknown[] } } | unknown[];
+    if (Array.isArray(parsed)) {
+      const first = parsed[0] as { nodes?: unknown[] } | undefined;
+      if (first && Array.isArray(first.nodes)) {
+        return first;
+      }
+    } else if (parsed && typeof parsed === "object") {
+      const obj = parsed as { nodes?: unknown[]; strategy?: { nodes?: unknown[] }; graph?: { nodes?: unknown[] } };
+      if (Array.isArray(obj.nodes)) return obj;
+      if (obj.strategy && Array.isArray(obj.strategy.nodes)) return obj.strategy;
+      if (obj.graph && Array.isArray(obj.graph.nodes)) return obj.graph;
+    }
+  } catch {
+    // continue
   }
   return null;
 }
