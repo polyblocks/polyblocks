@@ -266,6 +266,12 @@ export default function PositionsPage() {
   });
 
   const [liveSessionStart, setLiveSessionStart] = useState<Date | null>(null);
+  const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawAddress, setWithdrawAddress] = useState("");
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+
   const DUST_SIZE = 0.5;
   const DUST_VALUE = 0.5;
   const LIVE_SESSION_KEY = "pb_live_session_start";
@@ -425,9 +431,55 @@ export default function PositionsPage() {
       winRate: 0,
       totalPnl: 0,
       volume: 0,
-      history: [0, 0],
-      historyTimes: [nowIso, nowIso],
+      history: [0],
+      historyTimes: [nowIso],
     });
+    setLiveClosedPositions([]);
+    fetchPositions({ silent: true });
+    fetchTrades();
+  };
+
+  const handleWithdraw = async () => {
+    if (!withdrawAmount || isNaN(Number(withdrawAmount)) || Number(withdrawAmount) <= 0) {
+      alert("Please enter a valid amount.");
+      return;
+    }
+    if (!withdrawAddress) {
+      alert("Please enter a destination address.");
+      return;
+    }
+    
+    setIsWithdrawing(true);
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json"
+      };
+      if (token) headers["x-session-token"] = token;
+      
+      const res = await fetch("/api/positions/withdraw", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          amount: Number(withdrawAmount),
+          destinationAddress: withdrawAddress
+        })
+      });
+      
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Withdrawal failed");
+      }
+      
+      alert(`Withdrawal successful! TX Hash: ${data.txHash}`);
+      setShowWithdrawModal(false);
+      setWithdrawAmount("");
+      setWithdrawAddress("");
+      fetchPositions(); // Refresh balance
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsWithdrawing(false);
+    }
   };
 
   const resetAllPositions = async () => {
@@ -732,7 +784,17 @@ export default function PositionsPage() {
       const headers: Record<string, string> = {};
       if (token) headers["x-session-token"] = token;
       const userQuery = userId && userId !== "anonymous" ? `?userId=${encodeURIComponent(userId)}` : "";
-      const res = await fetch(`/api/positions/${userQuery}`, { headers });
+      
+      const [res, balanceRes] = await Promise.all([
+        fetch(`/api/positions/${userQuery}`, { headers }),
+        fetch(`/api/positions/balance${userQuery}`, { headers }).catch(() => null)
+      ]);
+
+      if (balanceRes && balanceRes.ok) {
+        const bData = await balanceRes.json();
+        if (bData.balance !== undefined) setUsdcBalance(bData.balance);
+      }
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as { positions: Position[]; error?: string };
       if (data.error && data.positions.length === 0) {
@@ -1095,6 +1157,21 @@ export default function PositionsPage() {
                 {formatUsd(activeTotalValue)}
               </div>
             </div>
+            {mode === "live" && usdcBalance !== null && (
+              <div className="pb-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--pb-text-muted)", marginBottom: 6 }}>Available USDC</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#3b82f6" }}>
+                    {formatUsd(usdcBalance)}
+                  </div>
+                </div>
+                <div style={{ marginTop: "auto", paddingTop: "8px" }}>
+                  <Button variant="default" size="sm" onClick={() => setShowWithdrawModal(true)} style={{ width: "100%", fontSize: "11px" }}>
+                    Withdraw
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="pb-card">
               <div style={{ fontSize: 12, color: "var(--pb-text-muted)", marginBottom: 6 }}>Win Rate</div>
               <div style={{ fontSize: 20, fontWeight: 700 }}>
@@ -1322,6 +1399,55 @@ export default function PositionsPage() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {showWithdrawModal && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.5)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center"
+        }}>
+          <div className="pb-card" style={{ width: 400, maxWidth: "90%", padding: 24 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16 }}>Withdraw USDC (Polygon)</h3>
+            <p style={{ fontSize: 13, color: "var(--pb-text-muted)", marginBottom: 20 }}>
+              Available Balance: <strong style={{ color: "white" }}>{usdcBalance !== null ? formatUsd(usdcBalance) : "0.00"}</strong>
+            </p>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <label style={{ fontSize: 12, color: "var(--pb-text-muted)" }}>Amount (USDC)</label>
+                <button 
+                  onClick={() => setWithdrawAmount(usdcBalance ? usdcBalance.toString() : "0")}
+                  style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 11, cursor: "pointer", padding: 0 }}
+                >
+                  Max
+                </button>
+              </div>
+              <input 
+                type="number" 
+                value={withdrawAmount} 
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                style={{ width: "100%", padding: "10px 12px", background: "var(--pb-panel)", border: "1px solid var(--pb-border)", color: "white", borderRadius: 4 }}
+                placeholder="e.g. 50"
+              />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: "block", fontSize: 12, marginBottom: 8, color: "var(--pb-text-muted)" }}>Destination Address (0x...)</label>
+              <input 
+                type="text" 
+                value={withdrawAddress} 
+                onChange={(e) => setWithdrawAddress(e.target.value)}
+                style={{ width: "100%", padding: "10px 12px", background: "var(--pb-panel)", border: "1px solid var(--pb-border)", color: "white", borderRadius: 4 }}
+                placeholder="0x..."
+              />
+            </div>
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+              <Button variant="default" onClick={() => setShowWithdrawModal(false)} disabled={isWithdrawing}>Cancel</Button>
+              <Button variant="primary" onClick={handleWithdraw} disabled={isWithdrawing}>
+                {isWithdrawing ? "Processing..." : "Withdraw"}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

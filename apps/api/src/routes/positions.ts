@@ -5,7 +5,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
-import { Wallet } from "ethers";
+import { Wallet, ethers } from "ethers";
 import { getCredentials } from "./credentials.js";
 import { builderConfig } from "../builderConfig.js";
 import { sessionsCol } from "../db.js";
@@ -117,6 +117,113 @@ async function enrichWithMarketNames(
 }
 
 export async function registerPositionRoutes(app: FastifyInstance) {
+
+  // ── Get USDC Balance ──────────────────────────────────────────────────────
+  app.get("/balance", async (request, reply) => {
+    const token = getSessionToken(request.headers as Record<string, unknown>);
+    const sessionUserId = await resolveSession(token);
+    const { userId: queryUserId } = request.query as { userId?: string };
+    const userId = sessionUserId || queryUserId || undefined;
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
+
+    try {
+      const creds = await getCredentials(userId);
+      if (!creds.isConfigured) {
+        return { balance: 0, error: "No credentials configured" };
+      }
+
+      const client = await createClobClient(userId);
+      // We want to fetch the USDC allowance and balance
+      // Note: we fetch conditional token allowance above but need USDC here
+      // For USDC on Polymarket, asset_type is collateral or we just call getBalanceAllowance directly
+      
+      try {
+        const balanceResponse = await client.getBalanceAllowance({ asset_type: AssetType.COLLATERAL }) as { balance?: string };
+        const balanceNum = parseFloat(balanceResponse?.balance || "0");
+        return { balance: balanceNum };
+      } catch (clientErr) {
+        console.error("[Positions] CLOB balance error:", clientErr);
+        return { balance: 0, error: "Failed to fetch balance from Polymarket" };
+      }
+    } catch (err) {
+      console.error("[Positions] Balance Error:", err);
+      return { balance: 0, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // ── Withdraw Funds (EOA users only) ───────────────────────────────────────
+  // Note: Only users with Signature Type 0 (EOA) can withdraw easily directly from the EOA.
+  // Proxy wallet users must use the bridge UI. We'll add this feature using ethers for Type 0.
+  app.post("/withdraw", async (request, reply) => {
+    const token = getSessionToken(request.headers as Record<string, unknown>);
+    const sessionUserId = await resolveSession(token);
+    const userId = sessionUserId || undefined;
+    if (!userId) return reply.code(401).send({ error: "Not authenticated" });
+
+    const body = request.body as {
+      amount: number;
+      destinationAddress: string;
+    };
+
+    if (!body.amount || body.amount <= 0) {
+      return reply.code(400).send({ error: "Valid amount is required" });
+    }
+    if (!body.destinationAddress) {
+      return reply.code(400).send({ error: "Destination address is required" });
+    }
+
+    try {
+      const creds = await getCredentials(userId);
+      if (!creds.isConfigured) {
+        return reply.code(400).send({ error: "No credentials configured" });
+      }
+
+      if (creds.signatureType !== 0) {
+        return reply.code(400).send({ error: "Direct withdrawal via API is only supported for Type 0 (EOA) wallets. If you are using a Proxy wallet, please use the Polymarket website's withdrawal feature." });
+      }
+
+      // Initialize provider and wallet for Polygon
+      const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon-rpc.com";
+      const provider = new ethers.providers.JsonRpcProvider(rpcUrl, 137);
+      const signer = new ethers.Wallet(creds.privateKey, provider);
+
+      // Check for MATIC/POL gas
+      const maticBalance = await provider.getBalance(signer.address);
+      if (maticBalance.eq(0)) {
+        return reply.code(400).send({ error: "Insufficient POL/MATIC for gas. You need a small amount of POL (MATIC) on Polygon in your wallet to pay for the withdrawal transaction." });
+      }
+
+      // USDC contract on Polygon
+      const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
+      const abi = [
+        "function transfer(address to, uint256 amount) returns (bool)",
+        "function balanceOf(address account) view returns (uint256)"
+      ];
+      const usdcContract = new ethers.Contract(USDC_ADDRESS, abi, signer);
+
+      // Check balance first
+      const balanceWei = await usdcContract.balanceOf(signer.address);
+      const amountWei = ethers.utils.parseUnits(body.amount.toString(), 6);
+
+      if (balanceWei.lt(amountWei)) {
+        return reply.code(400).send({ error: `Insufficient USDC balance on the wallet. Available: ${ethers.utils.formatUnits(balanceWei, 6)} USDC` });
+      }
+
+      // Execute transfer
+      console.log(`[Withdraw] User ${userId} withdrawing ${body.amount} USDC to ${body.destinationAddress}`);
+      const tx = await usdcContract.transfer(body.destinationAddress, amountWei);
+      const receipt = await tx.wait();
+
+      return {
+        success: true,
+        txHash: tx.hash,
+        message: `Successfully withdrew ${body.amount} USDC.`,
+      };
+    } catch (err) {
+      console.error("[Positions] Withdraw Error:", err);
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 
   // ── Get all open positions ────────────────────────────────────────────────
   app.get("/", async (request) => {
