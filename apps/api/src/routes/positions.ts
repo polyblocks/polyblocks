@@ -139,7 +139,13 @@ export async function registerPositionRoutes(app: FastifyInstance) {
       
       try {
         const balanceResponse = await client.getBalanceAllowance({ asset_type: AssetType.COLLATERAL }) as { balance?: string };
-        const balanceNum = parseFloat(balanceResponse?.balance || "0");
+        const rawBalance = balanceResponse?.balance || "0";
+        // USDC has 6 decimals — the CLOB API may return raw wei or a human-readable string.
+        // If the value looks like raw wei (a large integer with no decimal), convert it.
+        let balanceNum = parseFloat(rawBalance);
+        if (Number.isInteger(balanceNum) && balanceNum > 1_000_000) {
+          balanceNum = balanceNum / 1_000_000;
+        }
         return { balance: balanceNum };
       } catch (clientErr) {
         console.error("[Positions] CLOB balance error:", clientErr);

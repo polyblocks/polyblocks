@@ -102,6 +102,18 @@ const livePlaceOrderHandler: NodeHandler = {
     const orderTypeStr = String(node.config.orderType || "FOK").toUpperCase();
     const orderType = orderTypeStr === "FAK" ? OrderType.FAK : OrderType.FOK;
 
+    const marketConditionId = market?.conditionId || "";
+
+    // Duplicate trade prevention
+    if (node.config.preventDuplicate) {
+      const tradeKey = `placed_${node.id}_${marketConditionId}_${side}_${outcome}`;
+      if (ctx.state.get(tradeKey)) {
+        ctx.log(node.id, `⏭️ Duplicate trade skipped (${side} ${outcome} already placed this run)`);
+        return { orderId: null, filled: false };
+      }
+      ctx.state.set(tradeKey, true);
+    }
+
     const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
     const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
 
@@ -350,6 +362,18 @@ const liveLimitOrderHandler: NodeHandler = {
     const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
     const sizeUsd = inputs.sizeUsd ? Number(inputs.sizeUsd) : Number(node.config.sizeUsd || 10);
     const limitPrice = inputs.limitPrice ? Number(inputs.limitPrice) : Number(node.config.limitPrice || 0.5);
+
+    const marketConditionId = market?.conditionId || "";
+
+    // Duplicate trade prevention
+    if (node.config.preventDuplicate) {
+      const tradeKey = `placed_${node.id}_${marketConditionId}_${side}_${outcome}`;
+      if (ctx.state.get(tradeKey)) {
+        ctx.log(node.id, `⏭️ Duplicate trade skipped (${side} ${outcome} already placed this run)`);
+        return { orderId: null, placed: false };
+      }
+      ctx.state.set(tradeKey, true);
+    }
 
     const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
     const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
