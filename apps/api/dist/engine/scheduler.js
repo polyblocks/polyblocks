@@ -4,6 +4,7 @@
  * Server-side scheduler that keeps strategies running even when the user
  * navigates away from the editor. Supports both paper and live modes.
  */
+import { ExecutionStatus } from "@polyblocks/types";
 import { evaluateGraph } from "@polyblocks/engine-core";
 import { createPaperHandlers } from "./paperHandlers.js";
 import { createLiveHandlers } from "./liveHandlers.js";
@@ -15,12 +16,17 @@ import { nanoid } from "nanoid";
 class StrategyScheduler {
     schedules = new Map();
     listeners = new Map();
-    start(graph, intervalMs, mode = "paper") {
+    makeKey(userId, strategyId) {
+        return `${userId}:${strategyId}`;
+    }
+    start(userId, graph, intervalMs, mode = "paper") {
+        const key = this.makeKey(userId, graph.id);
         // Stop existing schedule for this strategy
-        if (this.schedules.has(graph.id)) {
-            this.stop(graph.id);
+        if (this.schedules.has(key)) {
+            this.stop(userId, graph.id);
         }
         const entry = {
+            userId,
             graph,
             intervalMs,
             mode,
@@ -37,38 +43,40 @@ class StrategyScheduler {
                 this.runOnce(entry);
             }
         }, intervalMs);
-        this.schedules.set(graph.id, entry);
-        console.log(`[Scheduler] Started strategy ${graph.id} (${graph.name}) in ${mode} mode every ${intervalMs}ms`);
+        this.schedules.set(key, entry);
+        console.log(`[Scheduler] Started strategy ${graph.id} for user ${userId} (${graph.name}) in ${mode} mode every ${intervalMs}ms`);
     }
-    stop(strategyId) {
-        const entry = this.schedules.get(strategyId);
+    stop(userId, strategyId) {
+        const key = this.makeKey(userId, strategyId);
+        const entry = this.schedules.get(key);
         if (entry?.timer) {
             clearInterval(entry.timer);
         }
-        this.schedules.delete(strategyId);
-        console.log(`[Scheduler] Stopped strategy ${strategyId}`);
+        this.schedules.delete(key);
+        console.log(`[Scheduler] Stopped strategy ${strategyId} for user ${userId}`);
     }
     stopAll() {
-        for (const [id] of this.schedules) {
-            this.stop(id);
+        for (const [, entry] of this.schedules) {
+            this.stop(entry.userId, entry.graph.id);
         }
     }
-    isScheduled(strategyId) {
-        return this.schedules.has(strategyId);
+    isScheduled(userId, strategyId) {
+        return this.schedules.has(this.makeKey(userId, strategyId));
     }
     /** Returns true if any strategy is currently scheduled. */
     hasAnyRunning() {
         return this.schedules.size > 0;
     }
     /** Returns the ID of the currently running strategy, or null. */
-    getRunningStrategyId() {
-        for (const [id] of this.schedules) {
-            return id;
+    getRunningStrategyId(userId) {
+        for (const [, entry] of this.schedules) {
+            if (entry.userId === userId)
+                return entry.graph.id;
         }
         return null;
     }
-    getStatus(strategyId) {
-        const entry = this.schedules.get(strategyId);
+    getStatus(userId, strategyId) {
+        const entry = this.schedules.get(this.makeKey(userId, strategyId));
         if (!entry)
             return null;
         return {
@@ -84,11 +92,13 @@ class StrategyScheduler {
         };
     }
     /** Get status of ALL running strategies */
-    getAllRunning() {
+    getAllRunning(userId) {
         const result = [];
-        for (const [id, entry] of this.schedules) {
+        for (const [, entry] of this.schedules) {
+            if (entry.userId !== userId)
+                continue;
             result.push({
-                strategyId: id,
+                strategyId: entry.graph.id,
                 strategyName: entry.graph.name,
                 mode: entry.mode,
                 startedAt: entry.startedAt,
@@ -100,15 +110,16 @@ class StrategyScheduler {
         return result;
     }
     /** Get recent logs for a scheduled strategy */
-    getRecentLogs(strategyId) {
-        const entry = this.schedules.get(strategyId);
+    getRecentLogs(userId, strategyId) {
+        const entry = this.schedules.get(this.makeKey(userId, strategyId));
         return entry?.recentLogs || [];
     }
-    onResult(strategyId, listener) {
-        if (!this.listeners.has(strategyId)) {
-            this.listeners.set(strategyId, []);
+    onResult(userId, strategyId, listener) {
+        const key = this.makeKey(userId, strategyId);
+        if (!this.listeners.has(key)) {
+            this.listeners.set(key, []);
         }
-        this.listeners.get(strategyId).push(listener);
+        this.listeners.get(key).push(listener);
     }
     async runOnce(entry) {
         entry.isExecuting = true;
@@ -136,15 +147,32 @@ class StrategyScheduler {
             if (entry.recentLogs.length > 20)
                 entry.recentLogs.length = 20;
             // Notify listeners
-            const listeners = this.listeners.get(entry.graph.id) || [];
+            const listeners = this.listeners.get(this.makeKey(entry.userId, entry.graph.id)) || [];
             for (const listener of listeners) {
                 listener(result);
             }
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            entry.lastError = msg;
+            const stack = err instanceof Error ? err.stack : undefined;
+            entry.lastError = stack || msg;
             console.error(`[Scheduler] Error running strategy ${entry.graph.id}:`, msg);
+            if (stack) {
+                console.error(`[Scheduler] Stack trace:`, stack);
+            }
+            // Create an error log entry
+            const errorLog = {
+                id: `error_${nanoid()}`,
+                strategyId: entry.graph.id,
+                startedAt: new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+                status: ExecutionStatus.Failed,
+                nodeResults: [],
+                error: stack || msg,
+            };
+            entry.recentLogs.unshift(errorLog);
+            if (entry.recentLogs.length > 20)
+                entry.recentLogs.length = 20;
         }
         finally {
             entry.isExecuting = false;

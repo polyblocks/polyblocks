@@ -3,6 +3,7 @@
  * Persisted to MongoDB (strategies collection).  Each strategy belongs to a userId.
  */
 import { nanoid } from "nanoid";
+import { ObjectId } from "mongodb";
 import { sessionsCol, strategiesCol } from "../db.js";
 function getSessionToken(headers) {
     const token = headers["x-session-token"];
@@ -20,6 +21,14 @@ async function resolveSession(token) {
     }
     return session.userId;
 }
+async function findStrategyByIdAnyType(id) {
+    const clauses = [{ _id: id }];
+    if (ObjectId.isValid(id)) {
+        clauses.push({ _id: new ObjectId(id) });
+    }
+    const filter = clauses.length === 1 ? clauses[0] : { $or: clauses };
+    return strategiesCol().findOne(filter);
+}
 export async function registerStrategyRoutes(app) {
     // ── List all strategies (optionally filter by userId query param) ────────
     app.get("/", async (req, reply) => {
@@ -30,7 +39,7 @@ export async function registerStrategyRoutes(app) {
         const docs = await strategiesCol().find({ userId }).sort({ updatedAt: -1 }).toArray();
         return {
             strategies: docs.map((s) => ({
-                id: s._id,
+                id: String(s._id),
                 name: s.name,
                 description: s.description,
                 status: s.status,
@@ -48,8 +57,10 @@ export async function registerStrategyRoutes(app) {
         if (!userId)
             return reply.code(401).send({ error: "Not authenticated" });
         const { id } = request.params;
-        const doc = await strategiesCol().findOne({ _id: id, userId });
+        const doc = await findStrategyByIdAnyType(id);
         if (!doc)
+            return reply.status(404).send({ error: "Strategy not found" });
+        if (String(doc.userId) !== userId)
             return reply.status(404).send({ error: "Strategy not found" });
         // Return in StrategyGraph-compatible shape
         return { ...doc, id: doc._id };
@@ -85,12 +96,14 @@ export async function registerStrategyRoutes(app) {
         if (!userId)
             return reply.code(401).send({ error: "Not authenticated" });
         const { id } = request.params;
-        const existing = await strategiesCol().findOne({ _id: id, userId });
+        const existing = await findStrategyByIdAnyType(id);
         if (!existing)
+            return reply.status(404).send({ error: "Strategy not found" });
+        if (String(existing.userId) !== userId)
             return reply.status(404).send({ error: "Strategy not found" });
         const body = request.body;
         const { id: _stripId, ...updates } = body;
-        await strategiesCol().updateOne({ _id: id, userId }, { $set: { ...updates, updatedAt: new Date().toISOString() } });
+        await strategiesCol().updateOne({ _id: existing._id }, { $set: { ...updates, updatedAt: new Date().toISOString() } });
         return { id, updated: true };
     });
     // ── Delete a strategy ────────────────────────────────────────────────────
@@ -100,7 +113,12 @@ export async function registerStrategyRoutes(app) {
         if (!userId)
             return reply.code(401).send({ error: "Not authenticated" });
         const { id } = request.params;
-        const result = await strategiesCol().deleteOne({ _id: id, userId });
+        const existing = await findStrategyByIdAnyType(id);
+        if (!existing)
+            return reply.status(404).send({ error: "Strategy not found" });
+        if (String(existing.userId) !== userId)
+            return reply.status(404).send({ error: "Strategy not found" });
+        const result = await strategiesCol().deleteOne({ _id: existing._id });
         if (result.deletedCount === 0) {
             return reply.status(404).send({ error: "Strategy not found" });
         }

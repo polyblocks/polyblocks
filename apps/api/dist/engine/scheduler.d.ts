@@ -12,15 +12,16 @@ import type { StrategyGraph, ExecutionLog } from "@polyblocks/types";
 declare class StrategyScheduler {
     private schedules;
     private listeners;
-    start(graph: StrategyGraph, intervalMs: number, mode?: "paper" | "live"): void;
-    stop(strategyId: string): void;
+    private makeKey;
+    start(userId: string, graph: StrategyGraph, intervalMs: number, mode?: "paper" | "live"): void;
+    stop(userId: string, strategyId: string): void;
     stopAll(): void;
-    isScheduled(strategyId: string): boolean;
+    isScheduled(userId: string, strategyId: string): boolean;
     /** Returns true if any strategy is currently scheduled. */
     hasAnyRunning(): boolean;
     /** Returns the ID of the currently running strategy, or null. */
-    getRunningStrategyId(): string | null;
-    getStatus(strategyId: string): {
+    getRunningStrategyId(userId: string): string | null;
+    getStatus(userId: string, strategyId: string): {
         strategyId: string;
         strategyName: string;
         intervalMs: number;
@@ -32,7 +33,7 @@ declare class StrategyScheduler {
         lastResult: ExecutionLog | undefined;
     } | null;
     /** Get status of ALL running strategies */
-    getAllRunning(): Array<{
+    getAllRunning(userId: string): Array<{
         strategyId: string;
         strategyName: string;
         mode: "paper" | "live";
@@ -42,8 +43,8 @@ declare class StrategyScheduler {
         lastError?: string;
     }>;
     /** Get recent logs for a scheduled strategy */
-    getRecentLogs(strategyId: string): ExecutionLog[];
-    onResult(strategyId: string, listener: (log: ExecutionLog) => void): void;
+    getRecentLogs(userId: string, strategyId: string): ExecutionLog[];
+    onResult(userId: string, strategyId: string, listener: (log: ExecutionLog) => void): void;
     private runOnce;
 }
 export declare const scheduler: StrategyScheduler;

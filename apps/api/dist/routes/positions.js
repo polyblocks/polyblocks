@@ -2,14 +2,31 @@
  * Positions & Trades routes — query real CLOB positions and trade history,
  * close positions via market sell.
  */
-import { ClobClient, Side, OrderType } from "@polymarket/clob-client";
-import { Wallet } from "ethers";
+import { ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
+import { Wallet, ethers } from "ethers";
 import { getCredentials } from "./credentials.js";
 import { builderConfig } from "../builderConfig.js";
+import { sessionsCol } from "../db.js";
 const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
 const DATA_API = "https://data-api.polymarket.com";
 const GAMMA_HOST = process.env.POLYMARKET_GAMMA_HOST || "https://gamma-api.polymarket.com";
 const CHAIN_ID = 137;
+function getSessionToken(headers) {
+    const token = headers["x-session-token"];
+    return typeof token === "string" ? token : "";
+}
+async function resolveSession(token) {
+    if (!token)
+        return null;
+    const session = await sessionsCol().findOne({ _id: token });
+    if (!session)
+        return null;
+    if (session.expiresAt < new Date()) {
+        await sessionsCol().deleteOne({ _id: token });
+        return null;
+    }
+    return session.userId;
+}
 async function createClobClient(userId) {
     const creds = await getCredentials(userId);
     if (!creds.isConfigured) {
@@ -83,9 +100,113 @@ async function enrichWithMarketNames(positions) {
     return marketMap;
 }
 export async function registerPositionRoutes(app) {
+    // ── Get USDC Balance ──────────────────────────────────────────────────────
+    app.get("/balance", async (request, reply) => {
+        const token = getSessionToken(request.headers);
+        const sessionUserId = await resolveSession(token);
+        const { userId: queryUserId } = request.query;
+        const userId = sessionUserId || queryUserId || undefined;
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
+        try {
+            const creds = await getCredentials(userId);
+            if (!creds.isConfigured) {
+                return { balance: 0, error: "No credentials configured" };
+            }
+            const client = await createClobClient(userId);
+            // We want to fetch the USDC allowance and balance
+            // Note: we fetch conditional token allowance above but need USDC here
+            // For USDC on Polymarket, asset_type is collateral or we just call getBalanceAllowance directly
+            try {
+                const balanceResponse = await client.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+                const rawBalance = balanceResponse?.balance || "0";
+                // USDC has 6 decimals — the CLOB API may return raw wei or a human-readable string.
+                // If the value looks like raw wei (a large integer with no decimal), convert it.
+                let balanceNum = parseFloat(rawBalance);
+                if (Number.isInteger(balanceNum) && balanceNum > 1_000_000) {
+                    balanceNum = balanceNum / 1_000_000;
+                }
+                return { balance: balanceNum };
+            }
+            catch (clientErr) {
+                console.error("[Positions] CLOB balance error:", clientErr);
+                return { balance: 0, error: "Failed to fetch balance from Polymarket" };
+            }
+        }
+        catch (err) {
+            console.error("[Positions] Balance Error:", err);
+            return { balance: 0, error: err instanceof Error ? err.message : String(err) };
+        }
+    });
+    // ── Withdraw Funds (EOA users only) ───────────────────────────────────────
+    // Note: Only users with Signature Type 0 (EOA) can withdraw easily directly from the EOA.
+    // Proxy wallet users must use the bridge UI. We'll add this feature using ethers for Type 0.
+    app.post("/withdraw", async (request, reply) => {
+        const token = getSessionToken(request.headers);
+        const sessionUserId = await resolveSession(token);
+        const userId = sessionUserId || undefined;
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
+        const body = request.body;
+        if (!body.amount || body.amount <= 0) {
+            return reply.code(400).send({ error: "Valid amount is required" });
+        }
+        if (!body.destinationAddress) {
+            return reply.code(400).send({ error: "Destination address is required" });
+        }
+        try {
+            const creds = await getCredentials(userId);
+            if (!creds.isConfigured) {
+                return reply.code(400).send({ error: "No credentials configured" });
+            }
+            if (creds.signatureType !== 0) {
+                return reply.code(400).send({ error: "Direct withdrawal via API is only supported for Type 0 (EOA) wallets. If you are using a Proxy wallet, please use the Polymarket website's withdrawal feature." });
+            }
+            // Initialize provider and wallet for Polygon
+            const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
+            const provider = new ethers.providers.JsonRpcProvider(rpcUrl, 137);
+            const signer = new ethers.Wallet(creds.privateKey, provider);
+            // Check for MATIC/POL gas
+            const maticBalance = await provider.getBalance(signer.address);
+            if (maticBalance.eq(0)) {
+                return reply.code(400).send({ error: "Insufficient POL/MATIC for gas. You need a small amount of POL (MATIC) on Polygon in your wallet to pay for the withdrawal transaction." });
+            }
+            // USDC contract on Polygon
+            const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
+            const abi = [
+                "function transfer(address to, uint256 amount) returns (bool)",
+                "function balanceOf(address account) view returns (uint256)"
+            ];
+            const usdcContract = new ethers.Contract(USDC_ADDRESS, abi, signer);
+            // Check balance first
+            const balanceWei = await usdcContract.balanceOf(signer.address);
+            const amountWei = ethers.utils.parseUnits(body.amount.toString(), 6);
+            if (balanceWei.lt(amountWei)) {
+                return reply.code(400).send({ error: `Insufficient USDC balance on the wallet. Available: ${ethers.utils.formatUnits(balanceWei, 6)} USDC` });
+            }
+            // Execute transfer
+            console.log(`[Withdraw] User ${userId} withdrawing ${body.amount} USDC to ${body.destinationAddress}`);
+            const tx = await usdcContract.transfer(body.destinationAddress, amountWei);
+            const receipt = await tx.wait();
+            return {
+                success: true,
+                txHash: tx.hash,
+                message: `Successfully withdrew ${body.amount} USDC.`,
+            };
+        }
+        catch (err) {
+            console.error("[Positions] Withdraw Error:", err);
+            return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+        }
+    });
     // ── Get all open positions ────────────────────────────────────────────────
     app.get("/", async (request) => {
-        const { userId } = request.query;
+        const token = getSessionToken(request.headers);
+        const sessionUserId = await resolveSession(token);
+        const { userId: queryUserId } = request.query;
+        const userId = sessionUserId || queryUserId || undefined;
+        if (!userId)
+            return { positions: [], error: "Not authenticated" };
         try {
             const creds = await getCredentials(userId);
             if (!creds.isConfigured) {
@@ -153,7 +274,12 @@ export async function registerPositionRoutes(app) {
             return { success: false, error: "tokenId and shares are required" };
         }
         try {
-            const client = await createClobClient(body.userId);
+            const token = getSessionToken(request.headers);
+            const sessionUserId = await resolveSession(token);
+            const userId = sessionUserId || body.userId || undefined;
+            if (!userId)
+                return { success: false, error: "Not authenticated" };
+            const client = await createClobClient(userId);
             console.log(`[Positions] Closing position: SELL ${body.shares} shares of ${body.outcome} (token: ${body.tokenId})`);
             const response = await client.createAndPostMarketOrder({
                 tokenID: body.tokenId,
@@ -272,7 +398,12 @@ export async function registerPositionRoutes(app) {
     });
     // ── Get trade history ─────────────────────────────────────────────────────
     app.get("/trades", async (request) => {
-        const { userId } = request.query;
+        const token = getSessionToken(request.headers);
+        const sessionUserId = await resolveSession(token);
+        const { userId: queryUserId } = request.query;
+        const userId = sessionUserId || queryUserId || undefined;
+        if (!userId)
+            return { trades: [], error: "Not authenticated" };
         try {
             const creds = await getCredentials(userId);
             if (!creds.isConfigured) {

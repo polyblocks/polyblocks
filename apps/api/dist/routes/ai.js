@@ -1,8 +1,263 @@
 /**
- * AI Strategy Builder route — uses Azure OpenAI (GPT-4o) to generate strategy
- * graphs from natural language prompts. Pro-only feature.
+ * AI Strategy Builder route — uses Google Vertex AI Global Endpoint (Gemini 2.5 Flash) to generate strategy
  */
 import { sessionsCol, usersCol } from "../db.js";
+import { createSign } from "crypto";
+const AI_DAILY_LIMIT = (() => {
+    const raw = Number(process.env.AI_DAILY_LIMIT || 50);
+    if (!Number.isFinite(raw) || raw < 1)
+        return 50;
+    return Math.floor(raw);
+})();
+async function getAiUsageCol() {
+    const { getDb } = await import("../db.js");
+    return getDb().collection("ai_usage");
+}
+async function checkRateLimit(userId) {
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const recordId = `${userId}_${today}`;
+    const usageCol = await getAiUsageCol();
+    const record = await usageCol.findOne({ _id: recordId });
+    const dailyLimit = AI_DAILY_LIMIT;
+    const resetAt = new Date();
+    resetAt.setDate(resetAt.getDate() + 1);
+    resetAt.setHours(0, 0, 0, 0);
+    if (!record) {
+        // First use today
+        await usageCol.insertOne({
+            _id: recordId,
+            userId,
+            date: today,
+            count: 1,
+            lastUsed: new Date(),
+        });
+        return {
+            allowed: true,
+            remaining: dailyLimit - 1,
+            resetAt: resetAt.toISOString(),
+            limit: dailyLimit,
+        };
+    }
+    if (record.count >= dailyLimit) {
+        return {
+            allowed: false,
+            remaining: 0,
+            resetAt: resetAt.toISOString(),
+            limit: dailyLimit,
+        };
+    }
+    // Increment count
+    await usageCol.updateOne({ _id: recordId }, { $inc: { count: 1 }, $set: { lastUsed: new Date() } });
+    return {
+        allowed: true,
+        remaining: dailyLimit - record.count - 1,
+        resetAt: resetAt.toISOString(),
+        limit: dailyLimit,
+    };
+}
+function extractJsonCandidates(text) {
+    const candidates = [];
+    const trimmed = text.trim();
+    if (!trimmed)
+        return candidates;
+    candidates.push(trimmed);
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced?.[1])
+        candidates.push(fenced[1].trim());
+    let objectDepth = 0;
+    let objectStart = -1;
+    let arrayDepth = 0;
+    let arrayStart = -1;
+    let inString = false;
+    let escaping = false;
+    for (let i = 0; i < trimmed.length; i++) {
+        const ch = trimmed[i];
+        if (inString) {
+            if (escaping) {
+                escaping = false;
+            }
+            else if (ch === "\\") {
+                escaping = true;
+            }
+            else if (ch === '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (ch === '"') {
+            inString = true;
+            continue;
+        }
+        if (ch === "{") {
+            if (objectDepth === 0)
+                objectStart = i;
+            objectDepth++;
+            continue;
+        }
+        if (ch === "}") {
+            objectDepth--;
+            if (objectDepth === 0 && objectStart >= 0) {
+                candidates.push(trimmed.slice(objectStart, i + 1));
+                objectStart = -1;
+            }
+            continue;
+        }
+        if (ch === "[") {
+            if (arrayDepth === 0)
+                arrayStart = i;
+            arrayDepth++;
+            continue;
+        }
+        if (ch === "]") {
+            arrayDepth--;
+            if (arrayDepth === 0 && arrayStart >= 0) {
+                candidates.push(trimmed.slice(arrayStart, i + 1));
+                arrayStart = -1;
+            }
+        }
+    }
+    return [...new Set(candidates)];
+}
+function normalizeJsonText(raw) {
+    let cleaned = raw.trim();
+    cleaned = cleaned.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+    const firstObj = cleaned.indexOf("{");
+    const lastObj = cleaned.lastIndexOf("}");
+    const firstArr = cleaned.indexOf("[");
+    const lastArr = cleaned.lastIndexOf("]");
+    if (firstObj >= 0 && lastObj > firstObj) {
+        cleaned = cleaned.slice(firstObj, lastObj + 1);
+    }
+    else if (firstArr >= 0 && lastArr > firstArr) {
+        cleaned = cleaned.slice(firstArr, lastArr + 1);
+    }
+    cleaned = cleaned.replace(/[“”]/g, "\"").replace(/[‘’]/g, "\"");
+    cleaned = cleaned.replace(/,\s*([}\]])/g, "$1");
+    cleaned = cleaned.replace(/\u2028|\u2029/g, "");
+    return cleaned;
+}
+function parseStrategyJson(text) {
+    const candidates = extractJsonCandidates(text);
+    for (const candidate of candidates) {
+        const tryParse = (raw) => {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+                const first = parsed[0];
+                if (first && Array.isArray(first.nodes)) {
+                    return first;
+                }
+            }
+            if (parsed && typeof parsed === "object" && Array.isArray(parsed.nodes)) {
+                return parsed;
+            }
+            if (parsed?.strategy && Array.isArray(parsed.strategy.nodes)) {
+                return parsed.strategy;
+            }
+            if (parsed?.graph && Array.isArray(parsed.graph.nodes)) {
+                return parsed.graph;
+            }
+            return null;
+        };
+        try {
+            const parsed = tryParse(candidate);
+            if (parsed)
+                return parsed;
+        }
+        catch {
+            // continue
+        }
+        try {
+            const normalized = normalizeJsonText(candidate);
+            const parsed = tryParse(normalized);
+            if (parsed)
+                return parsed;
+        }
+        catch {
+            // continue
+        }
+    }
+    try {
+        const normalized = normalizeJsonText(text);
+        const parsed = JSON.parse(normalized);
+        if (Array.isArray(parsed)) {
+            const first = parsed[0];
+            if (first && Array.isArray(first.nodes)) {
+                return first;
+            }
+        }
+        else if (parsed && typeof parsed === "object") {
+            const obj = parsed;
+            if (Array.isArray(obj.nodes))
+                return obj;
+            if (obj.strategy && Array.isArray(obj.strategy.nodes))
+                return obj.strategy;
+            if (obj.graph && Array.isArray(obj.graph.nodes))
+                return obj.graph;
+        }
+    }
+    catch {
+        // continue
+    }
+    return null;
+}
+function extractThreshold(prompt, keywords, fallback) {
+    const lower = prompt.toLowerCase();
+    const lines = lower.split(/\r?\n/);
+    for (const line of lines) {
+        if (!keywords.some((k) => line.includes(k)))
+            continue;
+        const m = line.match(/(?:>=|≥|<=|≤|above|below)\s*([0-9]*\.?[0-9]+)/i);
+        if (m) {
+            const v = Number(m[1]);
+            if (Number.isFinite(v) && v >= 0 && v <= 1)
+                return v;
+        }
+    }
+    return fallback;
+}
+function extractShares(prompt, fallback) {
+    const m = prompt.toLowerCase().match(/(\d+(?:\.\d+)?)\s*shares?/);
+    if (!m)
+        return fallback;
+    const v = Number(m[1]);
+    return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+function buildFallbackStrategy(prompt) {
+    const entryThreshold = extractThreshold(prompt, ["entry", "buy", "reaches", "above", "≥"], 0.85);
+    const stopThreshold = extractThreshold(prompt, ["stop", "loss", "sell", "below", "≤"], 0.70);
+    const shares = extractShares(prompt, 10);
+    const sizeUsd = Number((shares * entryThreshold).toFixed(2));
+    return {
+        name: "Threshold Entry + Stop Loss",
+        explanation: "Generated a robust fallback strategy because the AI model returned malformed JSON. This strategy continuously monitors price, buys on entry threshold, applies stop-loss, and closes on market resolution. Cycle-limit logic is not fully represented because a native cycle-counter block is not currently available.",
+        nodes: [
+            { id: "n1", type: "market_selector", position: { x: 60, y: 180 }, config: { conditionId: "", question: "" }, label: "Market" },
+            { id: "n2", type: "interval_trigger", position: { x: 60, y: 40 }, config: { intervalMs: 15000 }, label: "Poll" },
+            { id: "n3", type: "price_data", position: { x: 300, y: 120 }, config: { side: "YES" }, label: "Price" },
+            { id: "n4", type: "threshold_compare", position: { x: 550, y: 80 }, config: { operator: ">=", threshold: entryThreshold }, label: `Entry >= ${entryThreshold}` },
+            { id: "n5", type: "max_exposure", position: { x: 820, y: 80 }, config: { maxExposureUsd: 100 }, label: "Risk" },
+            { id: "n6", type: "place_order", position: { x: 1080, y: 80 }, config: { side: "BUY", outcome: "YES", sizeUsd }, label: `Buy ~${shares} shares` },
+            { id: "n7", type: "threshold_compare", position: { x: 550, y: 220 }, config: { operator: "<=", threshold: stopThreshold }, label: `Stop <= ${stopThreshold}` },
+            { id: "n8", type: "close_position", position: { x: 1080, y: 220 }, config: {}, label: "Stop Loss Exit" },
+            { id: "n9", type: "event_resolution_trigger", position: { x: 820, y: 320 }, config: {}, label: "Resolution" },
+            { id: "n10", type: "close_position", position: { x: 1080, y: 320 }, config: {}, label: "Resolution Exit" },
+        ],
+        edges: [
+            { id: "e1", source: "n1", sourceHandle: "market", target: "n3", targetHandle: "market" },
+            { id: "e2", source: "n2", sourceHandle: "signal", target: "n3", targetHandle: "trigger" },
+            { id: "e3", source: "n3", sourceHandle: "midpoint", target: "n4", targetHandle: "value" },
+            { id: "e4", source: "n4", sourceHandle: "signal", target: "n5", targetHandle: "signal" },
+            { id: "e5", source: "n5", sourceHandle: "signal", target: "n6", targetHandle: "signal" },
+            { id: "e6", source: "n1", sourceHandle: "market", target: "n6", targetHandle: "market" },
+            { id: "e7", source: "n3", sourceHandle: "midpoint", target: "n7", targetHandle: "value" },
+            { id: "e8", source: "n7", sourceHandle: "signal", target: "n8", targetHandle: "signal" },
+            { id: "e9", source: "n1", sourceHandle: "market", target: "n8", targetHandle: "market" },
+            { id: "e10", source: "n1", sourceHandle: "market", target: "n9", targetHandle: "market" },
+            { id: "e11", source: "n9", sourceHandle: "signal", target: "n10", targetHandle: "signal" },
+            { id: "e12", source: "n1", sourceHandle: "market", target: "n10", targetHandle: "market" },
+        ],
+    };
+}
 // ── Auth helper (mirrors auth.ts pattern) ────────────────────────────────
 async function resolveSession(token) {
     if (!token)
@@ -176,10 +431,10 @@ IMPORTANT RULES:
 `;
 // ── Route registration ───────────────────────────────────────────────────
 export async function registerAiRoutes(app) {
-    const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || "";
-    const AZURE_OPENAI_KEY = process.env.AZURE_OPENAI_KEY || "";
-    if (!AZURE_OPENAI_KEY || !AZURE_OPENAI_ENDPOINT) {
-        app.log.warn("AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_KEY not set — AI builder will return errors");
+    const VERTEX_AI_PROJECT_ID = process.env.VERTEX_AI_PROJECT_ID || "";
+    const VERTEX_AI_KEY = process.env.VERTEX_AI_KEY || "";
+    if (!VERTEX_AI_KEY || !VERTEX_AI_PROJECT_ID) {
+        app.log.warn("VERTEX_AI_PROJECT_ID / VERTEX_AI_KEY not set — AI builder will return errors");
     }
     /**
      * POST /api/ai/generate
@@ -202,6 +457,18 @@ export async function registerAiRoutes(app) {
         if (user.tier !== "pro" || (user.expiresAt && new Date(user.expiresAt) < new Date())) {
             return reply.code(403).send({ error: "Pro subscription required for AI Strategy Builder" });
         }
+        // ── Rate limit check (configurable requests/day) ──────────────────────
+        const rateLimit = await checkRateLimit(userId);
+        if (!rateLimit.allowed) {
+            return reply.code(429).send({
+                error: `Daily AI limit reached. You have used all ${rateLimit.limit} generations today.`,
+                resetAt: rateLimit.resetAt,
+            });
+        }
+        // Add rate limit headers
+        reply.header("X-RateLimit-Limit", rateLimit.limit);
+        reply.header("X-RateLimit-Remaining", rateLimit.remaining);
+        reply.header("X-RateLimit-Reset", rateLimit.resetAt);
         // ── Validate input ───────────────────────────────────────────────────
         const { prompt } = req.body;
         if (!prompt || typeof prompt !== "string" || prompt.trim().length < 5) {
@@ -210,51 +477,122 @@ export async function registerAiRoutes(app) {
         if (prompt.length > 2000) {
             return reply.code(400).send({ error: "Prompt is too long (max 2000 characters)" });
         }
-        if (!AZURE_OPENAI_KEY || !AZURE_OPENAI_ENDPOINT) {
+        if (!VERTEX_AI_KEY || !VERTEX_AI_PROJECT_ID) {
             return reply.code(500).send({ error: "AI service not configured. Please contact support." });
         }
-        // ── Call Azure OpenAI (GPT-4o) ───────────────────────────────────────
+        // ── Get OAuth2 Access Token from Service Account ────────────────────────
+        // Use Node.js crypto to sign JWT and exchange for OAuth2 token
+        let accessToken;
         try {
-            const azureRes = await fetch(AZURE_OPENAI_ENDPOINT, {
+            const keyObj = JSON.parse(VERTEX_AI_KEY);
+            if (keyObj.type === "service_account" && keyObj.private_key && keyObj.client_email) {
+                // Create JWT and exchange for OAuth2 token
+                const now = Math.floor(Date.now() / 1000);
+                const header = { alg: "RS256", typ: "JWT" };
+                const claimSet = {
+                    iss: keyObj.client_email,
+                    sub: keyObj.client_email,
+                    scope: "https://www.googleapis.com/auth/cloud-platform",
+                    aud: "https://oauth2.googleapis.com/token",
+                    exp: now + 3600,
+                    iat: now
+                };
+                const headerEncoded = Buffer.from(JSON.stringify(header)).toString("base64url").replace(/=+$/, "");
+                const claimEncoded = Buffer.from(JSON.stringify(claimSet)).toString("base64url").replace(/=+$/, "");
+                const toSign = `${headerEncoded}.${claimEncoded}`;
+                // Sign with private key using Node.js crypto
+                const sign = createSign("RSA-SHA256");
+                sign.update(toSign);
+                sign.end();
+                const signature = sign.sign(keyObj.private_key, "base64url");
+                const jwt = `${toSign}.${signature}`;
+                // Exchange JWT for OAuth2 access token
+                const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: new URLSearchParams({
+                        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                        assertion: jwt
+                    })
+                });
+                const tokenData = await tokenRes.json();
+                if (!tokenData.access_token) {
+                    throw new Error(`Token exchange failed: ${JSON.stringify(tokenData)}`);
+                }
+                accessToken = tokenData.access_token;
+                app.log.info("Successfully exchanged service account key for OAuth2 token");
+            }
+            else {
+                // Not a service account, assume it's already an access token
+                accessToken = VERTEX_AI_KEY;
+            }
+        }
+        catch (e) {
+            app.log.error(`Failed to process VERTEX_AI_KEY: ${e.message}`);
+            return reply.code(500).send({ error: "Invalid authentication credentials" });
+        }
+        // ── Call Google Vertex AI with OAuth2 Access Token ─────────────────────
+        try {
+            const vertexEndpoint = `https://us-central1-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent`;
+            const vertexAbort = new AbortController();
+            const vertexTimeout = setTimeout(() => vertexAbort.abort(), 20_000);
+            const vertexRes = await fetch(vertexEndpoint, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "api-key": AZURE_OPENAI_KEY,
+                    Authorization: `Bearer ${accessToken}`,
                 },
+                signal: vertexAbort.signal,
                 body: JSON.stringify({
-                    messages: [
-                        { role: "system", content: SYSTEM_PROMPT },
-                        { role: "user", content: prompt },
-                    ],
-                    temperature: 0.7,
-                    max_tokens: 4096,
-                    response_format: { type: "json_object" },
+                    contents: [{
+                            role: "user",
+                            parts: [{
+                                    text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`
+                                }]
+                        }],
+                    generationConfig: {
+                        temperature: 0.25,
+                        maxOutputTokens: 1800,
+                        responseMimeType: "application/json",
+                    },
+                    safetySettings: [
+                        {
+                            category: "HARM_CATEGORY_HARASSMENT",
+                            threshold: "BLOCK_NONE"
+                        },
+                        {
+                            category: "HARM_CATEGORY_HATE_SPEECH",
+                            threshold: "BLOCK_NONE"
+                        },
+                        {
+                            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                            threshold: "BLOCK_NONE"
+                        },
+                        {
+                            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                            threshold: "BLOCK_NONE"
+                        }
+                    ]
                 }),
             });
-            if (!azureRes.ok) {
-                const errBody = await azureRes.text();
-                app.log.error(`Azure OpenAI error ${azureRes.status}: ${errBody}`);
-                if (azureRes.status === 429) {
+            clearTimeout(vertexTimeout);
+            if (!vertexRes.ok) {
+                const errBody = await vertexRes.text();
+                app.log.error(`Google Vertex AI error ${vertexRes.status}: ${errBody}`);
+                if (vertexRes.status === 429) {
                     return reply.code(429).send({ error: "AI rate limit reached. Please wait a moment and try again." });
                 }
                 return reply.code(500).send({ error: "AI generation failed. Please try again." });
             }
-            const azureData = await azureRes.json();
-            const text = azureData.choices?.[0]?.message?.content || "";
-            // Parse the JSON response
-            let strategy;
-            try {
-                strategy = JSON.parse(text);
-            }
-            catch {
-                // Try to extract JSON from potential markdown code fences
-                const jsonMatch = text.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    strategy = JSON.parse(jsonMatch[0]);
-                }
-                else {
-                    return reply.code(500).send({ error: "AI returned invalid response. Please try again." });
-                }
+            const vertexData = await vertexRes.json();
+            const text = (vertexData.candidates?.[0]?.content?.parts || [])
+                .map((p) => p.text || "")
+                .join("\n")
+                .trim();
+            let strategy = parseStrategyJson(text);
+            if (!strategy) {
+                app.log.error(`AI returned unparsable response: ${text.slice(0, 600)}`);
+                strategy = buildFallbackStrategy(prompt);
             }
             // Basic validation
             if (!strategy.nodes || !Array.isArray(strategy.nodes) || strategy.nodes.length === 0) {
@@ -324,6 +662,9 @@ export async function registerAiRoutes(app) {
         catch (err) {
             const message = err instanceof Error ? err.message : "Unknown error";
             app.log.error(`AI generation failed: ${message}`);
+            if (message.includes("AbortError") || message.includes("aborted")) {
+                return reply.code(504).send({ error: "AI request timed out. Please shorten your prompt and try again." });
+            }
             if (message.includes("content_filter") || message.includes("content management")) {
                 return reply.code(400).send({ error: "Your prompt was flagged by content filters. Please rephrase." });
             }

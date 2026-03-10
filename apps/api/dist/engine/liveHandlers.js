@@ -8,7 +8,7 @@
 import { BlockType } from "@polyblocks/types";
 import { ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
 import { Wallet } from "ethers";
-import { getCredentials } from "../routes/credentials.js";
+import { getCredentials, ensureApprovals } from "../routes/credentials.js";
 import { createPaperHandlers } from "./paperHandlers.js";
 import { builderConfig } from "../builderConfig.js";
 const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
@@ -19,6 +19,10 @@ const CHAIN_ID = 137;
 // for 5 minutes to significantly optimize execution speed for live trades.
 const clobClientCache = new Map();
 const CLIENT_CACHE_TTL_MS = 5 * 60_000;
+// Track which users have already had their approvals verified this session.
+// Only EOA (signatureType 0) wallets need on-chain approvals — proxy wallets
+// are managed by Polymarket's infrastructure.
+const approvalCheckedUsers = new Set();
 async function createClobClientAsync(userId) {
     const creds = await getCredentials(userId);
     if (!creds.isConfigured) {
@@ -56,6 +60,25 @@ async function createClobClientAsync(userId) {
         passphrase: creds.passphrase,
     }, signatureType, funderAddr, undefined, false, builderConfig);
     clobClientCache.set(cacheKey, { client: newClient, expiresAt: now + CLIENT_CACHE_TTL_MS });
+    // ── One-time approval check for EOA wallets ─────────────────────────────
+    // Verify that USDC.e and CTF allowances are set. This is a safety net for
+    // users who saved credentials before the auto-approve feature existed, or
+    // whose wallet had no gas at the time of credential save.
+    const approvalKey = `${userId || "anon"}_${creds.privateKey.slice(0, 10)}`;
+    if (signatureType === 0 && !approvalCheckedUsers.has(approvalKey)) {
+        approvalCheckedUsers.add(approvalKey);
+        ensureApprovals(creds.privateKey).then((result) => {
+            if (result.success) {
+                console.log(`[LIVE] Contract approvals verified for user ${userId}:`, result.approvals);
+            }
+            else {
+                console.warn(`[LIVE] Approval check issues for user ${userId}:`, result.errors);
+            }
+        }).catch((err) => {
+            console.warn(`[LIVE] Approval check failed for user ${userId}:`, err);
+            approvalCheckedUsers.delete(approvalKey);
+        });
+    }
     return newClient;
 }
 // ── Live market order placement ──────────────────────────────────────────────
@@ -72,6 +95,16 @@ const livePlaceOrderHandler = {
         // Order type: FOK (Fill-Or-Kill) or FAK (Fill-And-Kill / IOC)
         const orderTypeStr = String(node.config.orderType || "FOK").toUpperCase();
         const orderType = orderTypeStr === "FAK" ? OrderType.FAK : OrderType.FOK;
+        const marketConditionId = market?.conditionId || "";
+        // Duplicate trade prevention
+        if (node.config.preventDuplicate) {
+            const tradeKey = `placed_${node.id}_${marketConditionId}_${side}_${outcome}`;
+            if (ctx.state.get(tradeKey)) {
+                ctx.log(node.id, `⏭️ Duplicate trade skipped (${side} ${outcome} already placed this run)`);
+                return { orderId: null, filled: false };
+            }
+            ctx.state.set(tradeKey, true);
+        }
         const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
         const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
         if (!tokenId) {
@@ -111,7 +144,7 @@ const livePlaceOrderHandler = {
                 if (httpStatus === 403) {
                     hint = "\n\n💡 403 Forbidden — common causes:\n" +
                         "  1. API credentials expired → Go to Settings, clear & re-save your credentials\n" +
-                        "  2. Token allowance not set → Visit polymarket.com and place a small manual trade first to approve the contract\n" +
+                        "  2. Token allowance not set → Go to Settings and click 'Approve Contracts', or re-save your credentials\n" +
                         "  3. Insufficient USDC balance on Polygon for this trade size";
                 }
                 else if (httpStatus === 401) {
@@ -260,6 +293,16 @@ const liveLimitOrderHandler = {
         const outcome = inputs.outcome ? String(inputs.outcome) : String(node.config.outcome || "YES");
         const sizeUsd = inputs.sizeUsd ? Number(inputs.sizeUsd) : Number(node.config.sizeUsd || 10);
         const limitPrice = inputs.limitPrice ? Number(inputs.limitPrice) : Number(node.config.limitPrice || 0.5);
+        const marketConditionId = market?.conditionId || "";
+        // Duplicate trade prevention
+        if (node.config.preventDuplicate) {
+            const tradeKey = `placed_${node.id}_${marketConditionId}_${side}_${outcome}`;
+            if (ctx.state.get(tradeKey)) {
+                ctx.log(node.id, `⏭️ Duplicate trade skipped (${side} ${outcome} already placed this run)`);
+                return { orderId: null, placed: false };
+            }
+            ctx.state.set(tradeKey, true);
+        }
         const tokenIds = market?.clobTokenIds || market?.tokens?.map((t) => t.token_id) || [];
         const tokenId = outcome === "YES" ? tokenIds[0] : tokenIds[1] || tokenIds[0];
         if (!tokenId) {
@@ -291,7 +334,7 @@ const liveLimitOrderHandler = {
                 if (httpStatus === 403) {
                     hint = "\n\n💡 403 Forbidden — common causes:\n" +
                         "  1. API credentials expired → Go to Settings, clear & re-save your credentials\n" +
-                        "  2. Token allowance not set → Visit polymarket.com and place a small manual trade first to approve the contract\n" +
+                        "  2. Token allowance not set → Go to Settings and click 'Approve Contracts', or re-save your credentials\n" +
                         "  3. Insufficient USDC balance on Polygon for this trade size";
                 }
                 else if (httpStatus === 401) {

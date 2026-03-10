@@ -1417,7 +1417,7 @@ export default function PositionsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <label style={{ fontSize: 12, color: "var(--pb-text-muted)" }}>Amount (USDC)</label>
                 <button 
-                  onClick={() => setWithdrawAmount(usdcBalance ? usdcBalance.toString() : "0")}
+                  onClick={() => setWithdrawAmount(usdcBalance ? (Math.floor(usdcBalance * 100) / 100).toString() : "0")}
                   style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 11, cursor: "pointer", padding: 0 }}
                 >
                   Max

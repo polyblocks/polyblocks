@@ -189,7 +189,7 @@ export async function registerPositionRoutes(app: FastifyInstance) {
       }
 
       // Initialize provider and wallet for Polygon
-      const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon-rpc.com";
+      const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
       const provider = new ethers.providers.JsonRpcProvider(rpcUrl, 137);
       const signer = new ethers.Wallet(creds.privateKey, provider);
 

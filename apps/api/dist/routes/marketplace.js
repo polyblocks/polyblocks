@@ -623,7 +623,7 @@ export async function registerMarketplaceRoutes(app) {
         const listing = await marketplaceListingsCol().findOne({ _id: purchase.listingId });
         if (!listing)
             return reply.code(404).send({ error: "Listing not found" });
-        const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon-rpc.com";
+        const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
         const provider = new ethers.providers.JsonRpcProvider(rpcUrl, POLYGON_CHAIN_ID);
         let tx = null;
         let receipt = null;

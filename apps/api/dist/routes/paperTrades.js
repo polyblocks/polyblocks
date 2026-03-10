@@ -3,13 +3,32 @@
  * All data stored in MongoDB so it's isolated per account.
  */
 import { randomUUID } from "crypto";
-import { paperTradesCol, executionLogsCol } from "../db.js";
+import { paperTradesCol, executionLogsCol, sessionsCol } from "../db.js";
+async function resolveSession(token) {
+    if (!token)
+        return null;
+    const session = await sessionsCol().findOne({ _id: token });
+    if (!session)
+        return null;
+    if (session.expiresAt < new Date()) {
+        await sessionsCol().deleteOne({ _id: token });
+        return null;
+    }
+    return session.userId;
+}
+async function requireAuth(request) {
+    const token = request.headers["x-session-token"];
+    if (!token)
+        return null;
+    const userId = await resolveSession(token);
+    return userId;
+}
 export async function registerPaperTradeRoutes(app) {
     // ── List ALL trades for a user (across all strategies) ────────────────────
-    app.get("/all", async (request) => {
-        const { userId } = request.query;
+    app.get("/all", async (request, reply) => {
+        const userId = await requireAuth(request);
         if (!userId)
-            return { trades: [] };
+            return reply.code(401).send({ error: "Not authenticated" });
         const docs = await paperTradesCol()
             .find({ userId })
             .sort({ executedAt: -1 })
@@ -30,10 +49,10 @@ export async function registerPaperTradeRoutes(app) {
         };
     });
     // ── Reset ALL paper data for a user ───────────────────────────────────────
-    app.delete("/all", async (request) => {
-        const { userId } = request.query;
+    app.delete("/all", async (request, reply) => {
+        const userId = await requireAuth(request);
         if (!userId)
-            return { cleared: false };
+            return reply.code(401).send({ error: "Not authenticated" });
         await Promise.all([
             paperTradesCol().deleteMany({ userId }),
             executionLogsCol().deleteMany({ userId })
@@ -41,14 +60,13 @@ export async function registerPaperTradeRoutes(app) {
         return { cleared: true };
     });
     // ── List trades for a strategy ────────────────────────────────────────────
-    app.get("/:strategyId", async (request) => {
+    app.get("/:strategyId", async (request, reply) => {
         const { strategyId } = request.params;
-        const { userId } = request.query;
-        const filter = { strategyId };
-        if (userId)
-            filter.userId = userId;
+        const userId = await requireAuth(request);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
         const docs = await paperTradesCol()
-            .find(filter)
+            .find({ strategyId, userId })
             .sort({ executedAt: -1 })
             .limit(500)
             .toArray();
@@ -67,12 +85,15 @@ export async function registerPaperTradeRoutes(app) {
         };
     });
     // ── Add trades for a strategy ─────────────────────────────────────────────
-    app.post("/:strategyId", async (request) => {
+    app.post("/:strategyId", async (request, reply) => {
         const { strategyId } = request.params;
+        const userId = await requireAuth(request);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
         const body = request.body;
         const docs = body.trades.map((t) => ({
             _id: t.id || `pt_${randomUUID().slice(0, 8)}`,
-            userId: body.userId || "anonymous",
+            userId,
             strategyId,
             marketConditionId: t.marketConditionId,
             tokenId: t.tokenId,
@@ -90,24 +111,22 @@ export async function registerPaperTradeRoutes(app) {
         return { added: docs.length };
     });
     // ── Clear trades for a strategy ───────────────────────────────────────────
-    app.delete("/:strategyId", async (request) => {
+    app.delete("/:strategyId", async (request, reply) => {
         const { strategyId } = request.params;
-        const { userId } = request.query;
-        const filter = { strategyId };
-        if (userId)
-            filter.userId = userId;
-        await paperTradesCol().deleteMany(filter);
+        const userId = await requireAuth(request);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
+        await paperTradesCol().deleteMany({ strategyId, userId });
         return { cleared: true };
     });
     // ── Get execution logs for a strategy ─────────────────────────────────────
-    app.get("/:strategyId/logs", async (request) => {
+    app.get("/:strategyId/logs", async (request, reply) => {
         const { strategyId } = request.params;
-        const { userId } = request.query;
-        const filter = { strategyId };
-        if (userId)
-            filter.userId = userId;
+        const userId = await requireAuth(request);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
         const docs = await executionLogsCol()
-            .find(filter)
+            .find({ strategyId, userId })
             .sort({ createdAt: -1 })
             .limit(100)
             .toArray();
@@ -116,12 +135,15 @@ export async function registerPaperTradeRoutes(app) {
         };
     });
     // ── Add execution logs ────────────────────────────────────────────────────
-    app.post("/:strategyId/logs", async (request) => {
+    app.post("/:strategyId/logs", async (request, reply) => {
         const { strategyId } = request.params;
+        const userId = await requireAuth(request);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
         const body = request.body;
         const docs = body.logs.map((log) => ({
             _id: `el_${randomUUID().slice(0, 8)}`,
-            userId: body.userId || "anonymous",
+            userId,
             strategyId,
             log,
             createdAt: new Date().toISOString(),
@@ -132,13 +154,12 @@ export async function registerPaperTradeRoutes(app) {
         return { added: docs.length };
     });
     // ── Clear execution logs ──────────────────────────────────────────────────
-    app.delete("/:strategyId/logs", async (request) => {
+    app.delete("/:strategyId/logs", async (request, reply) => {
         const { strategyId } = request.params;
-        const { userId } = request.query;
-        const filter = { strategyId };
-        if (userId)
-            filter.userId = userId;
-        await executionLogsCol().deleteMany(filter);
+        const userId = await requireAuth(request);
+        if (!userId)
+            return reply.code(401).send({ error: "Not authenticated" });
+        await executionLogsCol().deleteMany({ strategyId, userId });
         return { cleared: true };
     });
 }

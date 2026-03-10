@@ -620,7 +620,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
     try {
       // 1. Fetch transaction receipt from Polygon
-      const RPC_URL = process.env.POLYGON_RPC_URL || "https://polygon-rpc.com";
+      const RPC_URL = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
       const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
       
       const receipt = await provider.getTransactionReceipt(txHash);

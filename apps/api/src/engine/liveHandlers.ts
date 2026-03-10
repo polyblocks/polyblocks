@@ -10,7 +10,7 @@ import { BlockType } from "@polyblocks/types";
 import type { NodeHandler, NodeHandlerRegistry } from "@polyblocks/engine-core";
 import { ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
 import { Wallet } from "ethers";
-import { getCredentials } from "../routes/credentials.js";
+import { getCredentials, ensureApprovals } from "../routes/credentials.js";
 import { createPaperHandlers } from "./paperHandlers.js";
 import { builderConfig } from "../builderConfig.js";
 
@@ -23,6 +23,11 @@ const CHAIN_ID = 137;
 // for 5 minutes to significantly optimize execution speed for live trades.
 const clobClientCache = new Map<string, { client: ClobClient; expiresAt: number }>();
 const CLIENT_CACHE_TTL_MS = 5 * 60_000;
+
+// Track which users have already had their approvals verified this session.
+// Only EOA (signatureType 0) wallets need on-chain approvals — proxy wallets
+// are managed by Polymarket's infrastructure.
+const approvalCheckedUsers = new Set<string>();
 
 async function createClobClientAsync(userId?: string): Promise<ClobClient> {
   const creds = await getCredentials(userId);
@@ -77,6 +82,26 @@ async function createClobClientAsync(userId?: string): Promise<ClobClient> {
   );
 
   clobClientCache.set(cacheKey, { client: newClient, expiresAt: now + CLIENT_CACHE_TTL_MS });
+
+  // ── One-time approval check for EOA wallets ─────────────────────────────
+  // Verify that USDC.e and CTF allowances are set. This is a safety net for
+  // users who saved credentials before the auto-approve feature existed, or
+  // whose wallet had no gas at the time of credential save.
+  const approvalKey = `${userId || "anon"}_${creds.privateKey.slice(0, 10)}`;
+  if (signatureType === 0 && !approvalCheckedUsers.has(approvalKey)) {
+    approvalCheckedUsers.add(approvalKey);
+    ensureApprovals(creds.privateKey).then((result) => {
+      if (result.success) {
+        console.log(`[LIVE] Contract approvals verified for user ${userId}:`, result.approvals);
+      } else {
+        console.warn(`[LIVE] Approval check issues for user ${userId}:`, result.errors);
+      }
+    }).catch((err) => {
+      console.warn(`[LIVE] Approval check failed for user ${userId}:`, err);
+      approvalCheckedUsers.delete(approvalKey);
+    });
+  }
+
   return newClient;
 }
 
@@ -169,7 +194,7 @@ const livePlaceOrderHandler: NodeHandler = {
         if (httpStatus === 403) {
           hint = "\n\n💡 403 Forbidden — common causes:\n" +
             "  1. API credentials expired → Go to Settings, clear & re-save your credentials\n" +
-            "  2. Token allowance not set → Visit polymarket.com and place a small manual trade first to approve the contract\n" +
+            "  2. Token allowance not set → Go to Settings and click 'Approve Contracts', or re-save your credentials\n" +
             "  3. Insufficient USDC balance on Polygon for this trade size";
         } else if (httpStatus === 401) {
           hint = "\n\n💡 401 Unauthorized — your API key/secret may be invalid. Go to Settings and re-save your private key.";
@@ -423,7 +448,7 @@ const liveLimitOrderHandler: NodeHandler = {
         if (httpStatus === 403) {
           hint = "\n\n💡 403 Forbidden — common causes:\n" +
             "  1. API credentials expired → Go to Settings, clear & re-save your credentials\n" +
-            "  2. Token allowance not set → Visit polymarket.com and place a small manual trade first to approve the contract\n" +
+            "  2. Token allowance not set → Go to Settings and click 'Approve Contracts', or re-save your credentials\n" +
             "  3. Insufficient USDC balance on Polygon for this trade size";
         } else if (httpStatus === 401) {
           hint = "\n\n💡 401 Unauthorized — your API key/secret may be invalid. Go to Settings and re-save your private key.";
