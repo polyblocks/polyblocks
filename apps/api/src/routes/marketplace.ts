@@ -18,6 +18,7 @@ import {
   walletChallengesCol,
   walletLinksCol,
 } from "../db.js";
+import { getPolygonProvider } from "../rpc.js";
 
 const POLYGON_CHAIN_ID = 137;
 const POLYGON_USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
@@ -696,8 +697,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     const listing = await marketplaceListingsCol().findOne({ _id: purchase.listingId });
     if (!listing) return reply.code(404).send({ error: "Listing not found" });
 
-    const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
-    const provider = new ethers.providers.JsonRpcProvider(rpcUrl, POLYGON_CHAIN_ID);
+    const provider = await getPolygonProvider();
 
     let tx: ethers.providers.TransactionResponse | null = null;
     let receipt: ethers.providers.TransactionReceipt | null = null;

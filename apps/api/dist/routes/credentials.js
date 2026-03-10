@@ -7,6 +7,7 @@ import { ClobClient } from "@polymarket/clob-client";
 import { Wallet, ethers } from "ethers";
 import { credentialsCol, sessionsCol } from "../db.js";
 import { encrypt, decrypt } from "../crypto.js";
+import { getPolygonProvider } from "../rpc.js";
 // ── Polygon Contract Addresses ──────────────────────────────────────────────
 const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
 const CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
@@ -35,8 +36,7 @@ const ERC1155_ABI = [
  * Skips any approval that is already set. Returns a summary of what was approved.
  */
 export async function ensureApprovals(privateKey) {
-    const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
-    const provider = new ethers.providers.JsonRpcProvider(rpcUrl, 137);
+    const provider = await getPolygonProvider();
     const signer = new ethers.Wallet(privateKey, provider);
     const address = signer.address;
     const maticBalance = await provider.getBalance(address);

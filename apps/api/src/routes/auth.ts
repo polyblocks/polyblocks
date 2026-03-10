@@ -10,6 +10,7 @@ import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import { ethers } from "ethers";
 import { usersCol, sessionsCol, type DbUser } from "../db.js";
+import { getPolygonProvider } from "../rpc.js";
 
 const NOTIFY_EMAIL = "gaming.oars@gmail.com";
 
@@ -620,8 +621,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
     try {
       // 1. Fetch transaction receipt from Polygon
-      const RPC_URL = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
-      const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+      const provider = await getPolygonProvider();
       
       const receipt = await provider.getTransactionReceipt(txHash);
       if (!receipt || receipt.status !== 1) {

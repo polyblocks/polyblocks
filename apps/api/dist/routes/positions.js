@@ -7,6 +7,7 @@ import { Wallet, ethers } from "ethers";
 import { getCredentials } from "./credentials.js";
 import { builderConfig } from "../builderConfig.js";
 import { sessionsCol } from "../db.js";
+import { getPolygonProvider } from "../rpc.js";
 const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
 const DATA_API = "https://data-api.polymarket.com";
 const GAMMA_HOST = process.env.POLYMARKET_GAMMA_HOST || "https://gamma-api.polymarket.com";
@@ -162,9 +163,7 @@ export async function registerPositionRoutes(app) {
             if (creds.signatureType !== 0) {
                 return reply.code(400).send({ error: "Direct withdrawal via API is only supported for Type 0 (EOA) wallets. If you are using a Proxy wallet, please use the Polymarket website's withdrawal feature." });
             }
-            // Initialize provider and wallet for Polygon
-            const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
-            const provider = new ethers.providers.JsonRpcProvider(rpcUrl, 137);
+            const provider = await getPolygonProvider();
             const signer = new ethers.Wallet(creds.privateKey, provider);
             // Check for MATIC/POL gas
             const maticBalance = await provider.getBalance(signer.address);

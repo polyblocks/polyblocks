@@ -3,6 +3,7 @@ import * as crypto from "crypto";
 import { ethers } from "ethers";
 import { BUILTIN_TEMPLATES } from "@polyblocks/types";
 import { marketplaceListingsCol, marketplaceListingInteractionsCol, marketplaceListingStatsCol, marketplaceListingViewsCol, marketplacePurchasesCol, marketplaceVerifiedPerformanceCol, paperTradesCol, sessionsCol, strategiesCol, usersCol, walletChallengesCol, walletLinksCol, } from "../db.js";
+import { getPolygonProvider } from "../rpc.js";
 const POLYGON_CHAIN_ID = 137;
 const POLYGON_USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
 const COMMISSION_WALLET_ADDRESS = "0x06f344E8805Ce78e62699b46e3d8BC78a6c1a35f";
@@ -623,8 +624,7 @@ export async function registerMarketplaceRoutes(app) {
         const listing = await marketplaceListingsCol().findOne({ _id: purchase.listingId });
         if (!listing)
             return reply.code(404).send({ error: "Listing not found" });
-        const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
-        const provider = new ethers.providers.JsonRpcProvider(rpcUrl, POLYGON_CHAIN_ID);
+        const provider = await getPolygonProvider();
         let tx = null;
         let receipt = null;
         try {

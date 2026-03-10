@@ -9,6 +9,7 @@ import { ClobClient } from "@polymarket/clob-client";
 import { Wallet, ethers } from "ethers";
 import { credentialsCol, sessionsCol, type DbCredentials } from "../db.js";
 import { encrypt, decrypt } from "../crypto.js";
+import { getPolygonProvider } from "../rpc.js";
 
 // ── Polygon Contract Addresses ──────────────────────────────────────────────
 const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
@@ -49,8 +50,7 @@ export interface ApprovalResult {
  * Skips any approval that is already set. Returns a summary of what was approved.
  */
 export async function ensureApprovals(privateKey: string): Promise<ApprovalResult> {
-  const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon.drpc.org";
-  const provider = new ethers.providers.JsonRpcProvider(rpcUrl, 137);
+  const provider = await getPolygonProvider();
   const signer = new ethers.Wallet(privateKey, provider);
   const address = signer.address;
 
