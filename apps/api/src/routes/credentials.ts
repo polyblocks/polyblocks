@@ -9,7 +9,7 @@ import { ClobClient } from "@polymarket/clob-client";
 import { Wallet, ethers } from "ethers";
 import { credentialsCol, sessionsCol, type DbCredentials } from "../db.js";
 import { encrypt, decrypt } from "../crypto.js";
-import { getPolygonProvider } from "../rpc.js";
+import { getPolygonProvider, getGasOverrides } from "../rpc.js";
 
 // ── Polygon Contract Addresses ──────────────────────────────────────────────
 const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
@@ -65,6 +65,7 @@ export async function ensureApprovals(privateKey: string): Promise<ApprovalResul
 
   const usdc = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, signer);
   const ctf = new ethers.Contract(CTF_ADDRESS, ERC1155_ABI, signer);
+  const gasOverrides = await getGasOverrides(provider);
 
   const approvals: string[] = [];
   const errors: string[] = [];
@@ -85,7 +86,7 @@ export async function ensureApprovals(privateKey: string): Promise<ApprovalResul
         continue;
       }
       console.log(`[Approve] Setting USDC.e allowance for ${label} (${spender})...`);
-      const tx = await usdc.approve(spender, MAX_UINT256);
+      const tx = await usdc.approve(spender, MAX_UINT256, gasOverrides);
       await tx.wait();
       approvals.push(`USDC → ${label}: approved (tx: ${tx.hash})`);
     } catch (err) {
@@ -109,7 +110,7 @@ export async function ensureApprovals(privateKey: string): Promise<ApprovalResul
         continue;
       }
       console.log(`[Approve] Setting CTF approval for ${label} (${operator})...`);
-      const tx = await ctf.setApprovalForAll(operator, true);
+      const tx = await ctf.setApprovalForAll(operator, true, gasOverrides);
       await tx.wait();
       approvals.push(`CTF → ${label}: approved (tx: ${tx.hash})`);
     } catch (err) {

@@ -7,7 +7,7 @@ import { Wallet, ethers } from "ethers";
 import { getCredentials } from "./credentials.js";
 import { builderConfig } from "../builderConfig.js";
 import { sessionsCol } from "../db.js";
-import { getPolygonProvider } from "../rpc.js";
+import { getPolygonProvider, getGasOverrides } from "../rpc.js";
 const CLOB_HOST = process.env.POLYMARKET_CLOB_HOST || "https://clob.polymarket.com";
 const DATA_API = "https://data-api.polymarket.com";
 const GAMMA_HOST = process.env.POLYMARKET_GAMMA_HOST || "https://gamma-api.polymarket.com";
@@ -185,7 +185,8 @@ export async function registerPositionRoutes(app) {
             }
             // Execute transfer
             console.log(`[Withdraw] User ${userId} withdrawing ${body.amount} USDC to ${body.destinationAddress}`);
-            const tx = await usdcContract.transfer(body.destinationAddress, amountWei);
+            const gasOverrides = await getGasOverrides(provider);
+            const tx = await usdcContract.transfer(body.destinationAddress, amountWei, gasOverrides);
             const receipt = await tx.wait();
             return {
                 success: true,

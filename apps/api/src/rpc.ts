@@ -57,3 +57,21 @@ export async function getPolygonProvider(): Promise<ethers.providers.JsonRpcProv
     "All Polygon RPC endpoints are unreachable. Tried: " + rpcs.join(", "),
   );
 }
+
+// ─── Gas Price Helper ───────────────────────────────────────────────────────
+// Polygon requires a minimum 25 Gwei tip. Fetch live fees and enforce a floor.
+const MIN_TIP_GWEI = 30;
+const MIN_TIP = ethers.utils.parseUnits(MIN_TIP_GWEI.toString(), "gwei");
+
+export async function getGasOverrides(
+  provider: ethers.providers.JsonRpcProvider,
+): Promise<{ maxFeePerGas: ethers.BigNumber; maxPriorityFeePerGas: ethers.BigNumber }> {
+  const feeData = await provider.getFeeData();
+  let maxPriorityFee = feeData.maxPriorityFeePerGas ?? MIN_TIP;
+  if (maxPriorityFee.lt(MIN_TIP)) maxPriorityFee = MIN_TIP;
+
+  let maxFee = feeData.maxFeePerGas ?? maxPriorityFee.mul(2);
+  if (maxFee.lt(maxPriorityFee)) maxFee = maxPriorityFee.mul(2);
+
+  return { maxFeePerGas: maxFee, maxPriorityFeePerGas: maxPriorityFee };
+}
