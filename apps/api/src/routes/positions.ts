@@ -179,6 +179,13 @@ export async function registerPositionRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Destination address is required" });
     }
 
+    let destination: string;
+    try {
+      destination = ethers.utils.getAddress(body.destinationAddress.toLowerCase());
+    } catch {
+      return reply.code(400).send({ error: "Invalid destination address" });
+    }
+
     try {
       const creds = await getCredentials(userId);
       if (!creds.isConfigured) {
@@ -215,9 +222,9 @@ export async function registerPositionRoutes(app: FastifyInstance) {
       }
 
       // Execute transfer
-      console.log(`[Withdraw] User ${userId} withdrawing ${body.amount} USDC to ${body.destinationAddress}`);
+      console.log(`[Withdraw] User ${userId} withdrawing ${body.amount} USDC to ${destination}`);
       const gasOverrides = await getGasOverrides(provider);
-      const tx = await usdcContract.transfer(body.destinationAddress, amountWei, gasOverrides);
+      const tx = await usdcContract.transfer(destination, amountWei, gasOverrides);
       const receipt = await tx.wait();
 
       return {
